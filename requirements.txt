@@ -1,0 +1,2 @@
+pysmb==1.2.7
+python_masscan==0.1.6
