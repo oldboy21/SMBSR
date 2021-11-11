@@ -26,6 +26,7 @@ import sys
 import os
 import sqlite3
 from itertools import compress 
+import datetime
 
 class Database:
     def __init__(self,db_file):
@@ -44,13 +45,20 @@ class Database:
                                             share text NOT NULL,
                                             ip text NOT NULL,
                                             position text NOT NULL,
-                                            matchedWith text NOT NULL 
+                                            matchedWith text NOT NULL,
+                                            tsCreated text NOT NULL,
+                                            tsModified text NOT NULL, 
+                                            tsAccessed text NOT NULL  
                                         ); """
             smb_files_table = """ CREATE TABLE IF NOT EXISTS smbfile (
                                 id integer PRIMARY KEY AUTOINCREMENT,
                                 file text NOT NULL,
                                 share text NOT NULL,
-                                ip text NOT NULL
+                                ip text NOT NULL,
+                                tsCreated text NOT NULL,
+                                tsModified text NOT NULL,
+                                tsAccessed text NOT NULL
+
                             ); """
                                 
     
@@ -73,16 +81,16 @@ class Database:
         except Exception as e:
             logger.info(e)
 
-    def insertFinding(self, filename, share, ip, line, matched_with):
+    def insertFinding(self, filename, share, ip, line, matched_with ,times):
          cursor = self.cursor
-         insertFindingQuery = "INSERT INTO smbsr (file, share, ip, position, matchedWith) VALUES (?,?,?,?,?)"
-         cursor.execute(insertFindingQuery, (filename, share, ip, line, matched_with))
+         insertFindingQuery = "INSERT INTO smbsr (file, share, ip, position, matchedWith, tsCreated, tsModified, tsAccessed) VALUES (?,?,?,?,?,?,?,?)"
+         cursor.execute(insertFindingQuery, (filename, share, ip, line, matched_with, times[0], times[1], times[2]))
          self.commit()
 
-    def insertFileFinding(self, filename, share, ip):
+    def insertFileFinding(self, filename, share, ip, times):
          cursor = self.cursor
-         insertFindingQuery = "INSERT INTO smbfile (file, share, ip) VALUES (?,?,?)"
-         cursor.execute(insertFindingQuery, (filename, share, ip))
+         insertFindingQuery = "INSERT INTO smbfile (file, share, ip, tsCreated, tsModified, tsAccessed) VALUES (?,?,?,?,?,?)"
+         cursor.execute(insertFindingQuery, (filename, share, ip, times[0], times[1], times[2]))
          self.commit()         
                 
 
@@ -100,6 +108,17 @@ class HW(object):
             except KeyError:
                print("Invalid input please enter [y/n]")
 
+    def retrieveTimes(self, share, filename):
+        times = []
+        attributes = self.conn.getAttributes(share, filename)
+        ts_created = datetime.datetime.fromtimestamp(attributes.create_time).strftime('%Y-%m-%d %H:%M:%S')
+        ts_accessed = datetime.datetime.fromtimestamp(attributes.last_access_time).strftime('%Y-%m-%d %H:%M:%S')
+        ts_modified = datetime.datetime.fromtimestamp(attributes.last_write_time).strftime('%Y-%m-%d %H:%M:%S')
+        times.append(ts_created)
+        times.append(ts_modified)
+        times.append(ts_accessed)
+        return times 
+
     def passwordHW(self,text, filename,to_match, counter, IP, share):
         results = []
         output = False
@@ -110,7 +129,7 @@ class HW(object):
             m = [i for i, x in enumerate(results) if x]
             for z in m:
                 logger.info("Found interesting match in " + filename + " with " + to_match[z] +", line: " + str(counter)) 
-                self.db.insertFinding(filename, share, IP, str(counter), to_match[z])   
+                self.db.insertFinding(filename, share, IP, str(counter), to_match[z], self.retrieveTimes(share,filename))   
 
     def parse(self, share, filename, to_match, IP):
         line_counter = 0 
@@ -121,8 +140,11 @@ class HW(object):
         else:
             if file_ext.lower() in self.options.file_interesting.split(','):
                logger.info("Found interesting file: " + filename)
-               self.db.insertFileFinding(filename, share, IP)    
-            file_attributes, filesize = self.conn.retrieveFile(share, filename, file_obj)
+               self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename))
+            if (filename.split('/')[-1]).split('.')[0] in to_match:
+               logger.info("Found interesting file named " + filename)
+               self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename))      
+            file_attributes, filesize = self.conn.retrieveFile(share, filename, file_obj)        
             if filesize > self.options.max_size: 
                 bigF = self.get_bool("File size is bigger than the max size chosen, wish to continue?[y/n]")
                 if bigF is True: 
@@ -146,7 +168,8 @@ class HW(object):
                    self.passwordHW((line.decode("utf-8")).strip("\n"), filename,to_match, line_counter, IP, share) 
                   except Exception as e: 
                      logger.warning("Encountered exception while reading: " + str(e))
-                     break                             
+                     break
+            file_obj.close()                                      
     
 
     def walk_path(self,path,shared_folder,IP,to_match):
