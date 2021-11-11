@@ -25,6 +25,7 @@ import uuid
 import sys
 import os
 import sqlite3
+import csv
 from itertools import compress 
 import datetime
 
@@ -69,6 +70,21 @@ class Database:
         except Exception as e: 
           logger.error("Encountered error while creating the database: " + str(e))
           sys.exit(1)
+
+    def exportToCSV(self):
+        cursor = self.cursor
+        exportQuery = "SELECT * from smbsr"
+        exportQueryFile = "SELECT * from smbfile"
+        sr = cursor.execute(exportQuery)
+        with open('smbsr_results.csv', 'w') as f:
+            writer = csv.writer(f)
+            writer.writerows(sr)        
+        sf = cursor.execute(exportQueryFile)
+        with open('smbsrfile_results.csv', 'w') as g:
+            writer = csv.writer(g)
+            writer.writerows(sf)    
+
+
 
 
     def commit(self):
@@ -141,7 +157,7 @@ class HW(object):
             if file_ext.lower() in self.options.file_interesting.split(','):
                logger.info("Found interesting file: " + filename)
                self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename))
-            if (filename.split('/')[-1]).split('.')[0] in to_match:
+            if (filename.split('/')[-1]).split('.')[0].lower() in to_match:
                logger.info("Found interesting file named " + filename)
                self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename))      
             file_attributes, filesize = self.conn.retrieveFile(share, filename, file_obj)        
@@ -344,6 +360,7 @@ if __name__ == '__main__':
     parser.add_argument('-dbfile', action='store', default='./smbsr.db', type=str, help='Log file name')
     parser.add_argument('-file-interesting', action='store', default='none', type=str, help='Comma separated file extensions you want to be notified about')
     parser.add_argument('-folder-black', action='store', default='none', type=str, help='Comma separated folder names to skip during the analysis, keep in mind subfolders are also skipped')
+    parser.add_argument('-csv', action='store_true', default=False, help='Export results to CSV files in the project folder')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-ip-list-path', action="store", default="unset", type=str, help="File containing IP to scan")
     group.add_argument('-IP',action="store", help='IP address, CIDR or hostname')
@@ -399,7 +416,8 @@ if __name__ == '__main__':
                 sys.exit(1)           
     else:     
         smbHW.shareAnalyze(to_analyze, to_match)
-
+    if options.csv:
+       db.exportToCSV()
     print ("Hope you found something good mate!")
     
 
