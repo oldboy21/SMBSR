@@ -17,6 +17,7 @@ The interesting keywords the tool should look for are defined via the command li
 * Should i masscan or not?
 * Interesting file extensions (I guess something like ppk, kdbx, ...)
 * Maximum file size allowed to be checked (Believe me, too big might take some time) 
+* Should i export the results in two nice CSV files? 
 * Other common ones and required 
 
 Of course everything is saved locally in a SQlite Database. The database containes one table for the "hopefully it's a DA password" match, called smbsr containing the 
