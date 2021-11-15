@@ -160,10 +160,12 @@ class HW(object):
             if (filename.split('/')[-1]).split('.')[0].lower() in to_match:
                logger.info("Found interesting file named " + filename)
                self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename))      
-            file_attributes, filesize = self.conn.retrieveFile(share, filename, file_obj)        
+            
+            filesize = (self.conn.getAttributes(share, filename)).file_size        
             if filesize > self.options.max_size: 
                 bigF = self.get_bool("File size is bigger than the max size chosen, wish to continue?[y/n]")
                 if bigF is True: 
+                   file_attributes, filesize = self.conn.retrieveFile(share, filename, file_obj)
                    file_obj.seek(0)
                    lines = file_obj.readlines()
                    for line in lines: 
@@ -176,6 +178,7 @@ class HW(object):
                 else: 
                     print ("I understand, i will proceed with the next file")
             else:
+                file_attributes, filesize = self.conn.retrieveFile(share, filename, file_obj)
                 file_obj.seek(0)
                 lines = file_obj.readlines()
                 for line in lines: 
@@ -189,23 +192,35 @@ class HW(object):
     
 
     def walk_path(self,path,shared_folder,IP,to_match):
-        try:
-          for p in self.conn.listPath(shared_folder, path):
-              if p.filename!='.' and p.filename!='..':
-                  parentPath = path
-                  if not parentPath.endswith('/'):
-                      parentPath += '/'
-                  if p.isDirectory:
-                      if p.filename.lower() in self.options.folder_black.split(','):
-                        logger.info('Skipping ' + p.filename + " since blacklisted")
-                        continue
-                      else:   
-                         self.walk_path(parentPath+p.filename,shared_folder,IP,to_match)
-                  else:
-                      logger.info( 'File: '+ parentPath+p.filename )
-                      self.parse(shared_folder, parentPath+p.filename, to_match, IP)
-        except Exception as e: 
-           logger.warning("Error while listing paths in shares: " + str(e))               
+           #print (depth)
+           try:
+             for p in self.conn.listPath(shared_folder, path):
+                 if p.filename!='.' and p.filename!='..':
+                     parentPath = path
+                     if not parentPath.endswith('/'):
+                         parentPath += '/'
+                     if p.isDirectory:   
+
+                         if p.filename.lower() in self.options.folder_black.split(','):
+                           logger.info('Skipping ' + p.filename + " since blacklisted")   
+
+                           continue
+                         else:  
+                            if parentPath.count('/') <= self.options.depth: 
+                              
+                              logger.info("Visiting subfolder " + str(p.filename))  
+
+                              self.walk_path(parentPath+p.filename,shared_folder,IP,to_match)
+                              
+                            else:
+                               logger.info("Skipping " + str(p.filename) + ", too deep")
+                               #depth-=1
+                               continue  
+                     else:
+                         logger.info( 'File: '+ parentPath+p.filename )
+                         self.parse(shared_folder, parentPath+p.filename, to_match, IP)
+           except Exception as e: 
+              logger.warning("Error while listing paths in shares: " + str(e))               
     
 
     def shareAnalyze(self,IPaddress, to_match):
@@ -361,6 +376,7 @@ if __name__ == '__main__':
     parser.add_argument('-file-interesting', action='store', default='none', type=str, help='Comma separated file extensions you want to be notified about')
     parser.add_argument('-folder-black', action='store', default='none', type=str, help='Comma separated folder names to skip during the analysis, keep in mind subfolders are also skipped')
     parser.add_argument('-csv', action='store_true', default=False, help='Export results to CSV files in the project folder')
+    parser.add_argument('-depth', action='store', default=100000000, type=int, help='How recursively deep you want to go while looking for secrets')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-ip-list-path', action="store", default="unset", type=str, help="File containing IP to scan")
     group.add_argument('-IP',action="store", help='IP address, CIDR or hostname')
