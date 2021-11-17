@@ -20,6 +20,7 @@ from io import BytesIO
 import masscan
 import _thread
 import threading
+from threading import Lock
 import random
 import uuid
 import sys
@@ -28,14 +29,18 @@ import sqlite3
 import csv
 from itertools import compress 
 import datetime
+import faulthandler
+import concurrent.futures
 
 class Database:
     def __init__(self,db_file):
         self.db_file=db_file
 
+
     def connect_database(self):
         self.conn = sqlite3.connect(self.db_file, check_same_thread=False)
         self.cursor = self.conn.cursor()
+        self.lock = threading.Lock()
 
     def create_database(self):
         self.connect_database()
@@ -98,16 +103,26 @@ class Database:
             logger.info(e)
 
     def insertFinding(self, filename, share, ip, line, matched_with ,times):
-         cursor = self.cursor
-         insertFindingQuery = "INSERT INTO smbsr (file, share, ip, position, matchedWith, tsCreated, tsModified, tsAccessed) VALUES (?,?,?,?,?,?,?,?)"
-         cursor.execute(insertFindingQuery, (filename, share, ip, line, matched_with, times[0], times[1], times[2]))
-         self.commit()
+         
+         try: 
+           self.lock.acquire(True) 
+           cursor = self.cursor
+           insertFindingQuery = "INSERT INTO smbsr (file, share, ip, position, matchedWith, tsCreated, tsModified, tsAccessed) VALUES (?,?,?,?,?,?,?,?)"
+           cursor.execute(insertFindingQuery, (filename, share, ip, line, matched_with, times[0], times[1], times[2]))
+           self.commit()
+         finally: 
+           self.lock.release()  
 
     def insertFileFinding(self, filename, share, ip, times):
-         cursor = self.cursor
-         insertFindingQuery = "INSERT INTO smbfile (file, share, ip, tsCreated, tsModified, tsAccessed) VALUES (?,?,?,?,?,?)"
-         cursor.execute(insertFindingQuery, (filename, share, ip, times[0], times[1], times[2]))
-         self.commit()         
+         
+         try: 
+           self.lock.acquire(True)         
+           cursor = self.cursor
+           insertFindingQuery = "INSERT INTO smbfile (file, share, ip, tsCreated, tsModified, tsAccessed) VALUES (?,?,?,?,?,?)"
+           cursor.execute(insertFindingQuery, (filename, share, ip, times[0], times[1], times[2]))
+           self.commit()  
+         finally: 
+            self.lock.release()         
                 
 
 class HW(object):
@@ -162,21 +177,9 @@ class HW(object):
                self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename))      
             
             filesize = (self.conn.getAttributes(share, filename)).file_size        
-            if filesize > self.options.max_size: 
-                bigF = self.get_bool("File size is bigger than the max size chosen, wish to continue?[y/n]")
-                if bigF is True: 
-                   file_attributes, filesize = self.conn.retrieveFile(share, filename, file_obj)
-                   file_obj.seek(0)
-                   lines = file_obj.readlines()
-                   for line in lines: 
-                     line_counter+=1
-                     try:
-                        self.passwordHW((line.decode("utf-8")).strip("\n"), filename,to_match, line_counter, IP, share)
-                     except Exception as e: 
-                         logger.info("Encountered exception while reading: " + str(e))
-                         break   
-                else: 
-                    print ("I understand, i will proceed with the next file")
+            if filesize > self.options.max_size:
+                logger.info("Skipping file " + filename + ", it is too big and you said i can't handle it")
+
             else:
                 file_attributes, filesize = self.conn.retrieveFile(share, filename, file_obj)
                 file_obj.seek(0)
@@ -213,8 +216,8 @@ class HW(object):
                               self.walk_path(parentPath+p.filename,shared_folder,IP,to_match)
                               
                             else:
-                               logger.info("Skipping " + str(p.filename) + ", too deep")
-                               #depth-=1
+                               logger.info("Skipping " + str(parentPath+p.filename) + ", too deep")
+                               
                                continue  
                      else:
                          logger.info( 'File: '+ parentPath+p.filename )
@@ -249,8 +252,9 @@ class HW(object):
                 self.walk_path("/",share.name,ip, to_match)
          self.conn.close()   
 
-    def shareAnalyzeLightning(self,ip, to_match):
+    def shareAnalyzeLightning(self,to_analyze, to_match):
        
+       ip = to_analyze.pop(0)
        logger.info("Checking SMB share on: " + ip)
        #domain_name = 'domainname'
        #conn = SMBConnection(options.username,options.password,options.fake_hostname,'netbios-server-name','SECRET.LOCAL',use_ntlm_v2=True,is_direct_tcp=True)
@@ -258,7 +262,7 @@ class HW(object):
           self.conn.connect(ip, 445)
        except Exception as e:
            logger.info("Detected error while connecting to " + str(ip) + " with message " + str(e))
-           sys.exit()
+           sys.exit(1)
            ##NEED TO STOP HERE
        try:    
           shares = self.conn.listShares()
@@ -366,7 +370,7 @@ if __name__ == '__main__':
     parser.add_argument('-domain', action='store', default='SECRET.LOCAL', help='Domain for authenticated scan')
     parser.add_argument('-fake-hostname', action='store', default='localhost', help='Computer hostname SMB connection will be from')
     parser.add_argument('-word-list-path', action="store", type=str, help="File containing the string to look for", required=True)
-    parser.add_argument('-max-size', action="store", default=50000 ,type=int, help="Maximum size of the file to be considered for scanning")
+    parser.add_argument('-max-size', action="store", default=50000 ,type=int, help="Maximum size of the file to be considered for scanning (bytes)")
     parser.add_argument('-file-extensions-black', action='store', type=str, default='none', help='Comma separated file extensions to skip while secrets harvesting')
     parser.add_argument('-multithread', action='store_true', default=False, help="Assign a thread to any IP to scan")
     parser.add_argument('-masscan', action='store_true', default=False, help="Scan for 445 before trying to analyze the share")
@@ -382,7 +386,7 @@ if __name__ == '__main__':
     group.add_argument('-IP',action="store", help='IP address, CIDR or hostname')
    
     options = parser.parse_args()
-
+    faulthandler.enable()
     formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
 
     logger = logging.getLogger('logger')
@@ -411,6 +415,7 @@ if __name__ == '__main__':
     db = Database(options.dbfile)
     setupPersistence(db, options.dbfile)
 
+    locker = Lock()
     smbHW = HW(options, db)
     to_match = smbHW.readMatches()
     to_analyze = smbHW.scanNetwork()
@@ -419,17 +424,10 @@ if __name__ == '__main__':
         
         #multithreading function call
         logger.info("Lighting!!")
-        
-        while len(to_analyze) > 0:
-            if threading.active_count() <= options.T:
-              try:
-                worker = smbworker("Worker-" + str(uuid.uuid4())[:8], options, to_analyze[0], to_match, db)
-                to_analyze.pop(0)
-                worker.start()
-                worker.join()
-              except Exception as e: 
-                logger.error("Error while multithreading: " + str(e))
-                sys.exit(1)           
+        with concurrent.futures.ThreadPoolExecutor(max_workers=options.T) as executor:
+           while len(to_analyze) > 0:
+             smbHW = HW(options, db)
+             future = executor.submit(smbHW.shareAnalyzeLightning, to_analyze, to_match)                   
     else:     
         smbHW.shareAnalyze(to_analyze, to_match)
     if options.csv:

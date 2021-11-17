@@ -18,6 +18,7 @@ The interesting keywords the tool should look for are defined via the command li
 * Interesting file extensions (I guess something like ppk, kdbx, ...)
 * Maximum file size allowed to be checked (Believe me, too big might take some time) 
 * Should i export the results in two nice CSV files? 
+* How deep should i look into subfolders?
 * Other common ones and required 
 
 Of course everything is saved locally in a SQlite Database. The database containes one table for the "hopefully it's a DA password" match, called smbsr containing the 
@@ -57,6 +58,7 @@ For instance, from the project folder:
 ## Coming Soon(?)
 
 * LDAP Integration in order to retrieve the list of computer objects
+* Results cleaning
 
 # Credits 
 
