@@ -54,7 +54,8 @@ class Database:
                                             matchedWith text NOT NULL,
                                             tsCreated text NOT NULL,
                                             tsModified text NOT NULL, 
-                                            tsAccessed text NOT NULL  
+                                            tsAccessed text NOT NULL,
+                                            count integer NOT NULL  
                                         ); """
             smb_files_table = """ CREATE TABLE IF NOT EXISTS smbfile (
                                 id integer PRIMARY KEY AUTOINCREMENT,
@@ -107,9 +108,16 @@ class Database:
          try: 
            self.lock.acquire(True) 
            cursor = self.cursor
-           insertFindingQuery = "INSERT INTO smbsr (file, share, ip, position, matchedWith, tsCreated, tsModified, tsAccessed) VALUES (?,?,?,?,?,?,?,?)"
-           cursor.execute(insertFindingQuery, (filename, share, ip, line, matched_with, times[0], times[1], times[2]))
-           self.commit()
+           checkQuery = 'SELECT id FROM smbsr WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\''.format(ip=ip, share=share, filename=filename)
+           results = cursor.execute(checkQuery).fetchall()
+           if len(results) == 0:
+               insertFindingQuery = "INSERT INTO smbsr (file, share, ip, position, matchedWith, tsCreated, tsModified, tsAccessed, count) VALUES (?,?,?,?,?,?,?,?,?)"
+               cursor.execute(insertFindingQuery, (filename, share, ip, line, matched_with, times[0], times[1], times[2], 1))
+               self.commit()
+           else: 
+                updateQuery = 'UPDATE smbsr SET count = count + 1 WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\''.format(ip=ip, share=share, filename=filename)
+                cursor.execute(updateQuery)
+                self.commit()  
          finally: 
            self.lock.release()  
 
