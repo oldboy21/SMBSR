@@ -32,6 +32,7 @@ following columns:
 * Creation Date
 * Last Modified Date
 * Last Accessed Date
+* Count (If more then one match one the same file, this one is incremented)
 
 And also another table for the interesting file list containing the following columns: 
 
