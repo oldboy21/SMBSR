@@ -16,7 +16,7 @@ The interesting keywords the tool should look for are defined via the command li
 * Number of Threads
 * Should i masscan or not?
 * Interesting file extensions (I guess something like ppk, kdbx, ...)
-* Maximum file size allowed to be checked (Believe me, too big might take some time) 
+* Maximum file size (Bytes) allowed to be checked (Believe me, too big might take some time) 
 * Should i export the results in two nice CSV files? 
 * How deep should i look into subfolders?
 * Other common ones and required 
@@ -32,7 +32,7 @@ following columns:
 * Creation Date
 * Last Modified Date
 * Last Accessed Date
-* Count (If more then one match one the same file, this one is incremented)
+* Count (If more then one match on the same file, this one is incremented)
 
 And also another table for the interesting file list containing the following columns: 
 
@@ -59,7 +59,6 @@ For instance, from the project folder:
 ## Coming Soon(?)
 
 * LDAP Integration in order to retrieve the list of computer objects
-* Results cleaning
 
 # Credits 
 
