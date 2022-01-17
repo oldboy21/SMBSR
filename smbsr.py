@@ -21,6 +21,7 @@ import masscan
 import _thread
 import threading
 from threading import Lock
+from threading import Thread
 import random
 import uuid
 import sys
@@ -31,6 +32,8 @@ from itertools import compress
 import datetime
 import faulthandler
 import concurrent.futures
+import gc
+import time
 
 class Database:
     def __init__(self,db_file):
@@ -139,6 +142,7 @@ class HW(object):
         self.options = options 
         self.conn = SMBConnection(options.username,options.password,options.fake_hostname,'netbios-server-name',options.domain,use_ntlm_v2=True,is_direct_tcp=True) 
         self.db = db 
+        
 
     def get_bool(self,prompt):
         while True:
@@ -267,25 +271,18 @@ class HW(object):
        #domain_name = 'domainname'
        #conn = SMBConnection(options.username,options.password,options.fake_hostname,'netbios-server-name','SECRET.LOCAL',use_ntlm_v2=True,is_direct_tcp=True)
        try:
-          self.conn.connect(ip, 445)
-       except Exception as e:
-           logger.info("Detected error while connecting to " + str(ip) + " with message " + str(e))
-           sys.exit(1)
-           ##NEED TO STOP HERE
-       try:    
+          self.conn.connect(ip, 445)          
           shares = self.conn.listShares()
+          for share in shares:
+            if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$']: 
+                   logger.info('Listing file in share: ' + share.name)
+                   self.walk_path("/",share.name,ip, to_match)
        except Exception as e:
            logger.info("Detected error while listing shares on "  + str(ip) + " with message " + str(e))
-           sys.exit()    
-       for share in shares:
-           if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$']:
-              logger.info('Listing file in share: ' + share.name)
-              try:
-                 sharedfiles = self.conn.listPath(share.name, '/')
-              except Exception as e: 
-                 logger.warning("Could not list path on share " + share.name + " due to: " + str(e))   
-              self.walk_path("/",share.name,ip, to_match)
-       self.conn.close()       
+            
+
+       self.conn.close()
+       
 
 
     def scanNetwork(self):
@@ -308,7 +305,7 @@ class HW(object):
                  final.append(socket.gethostbyname(i))
                except socket.gaierror: 
                    logger.warning("\nHostname could not be resolved: " + i)
-                   #sys.exit(1)
+                   
           else: 
               final.append(i)         
        ranges = ','.join(final)
@@ -346,20 +343,24 @@ class HW(object):
 
 
 class smbworker (threading.Thread):
-   def __init__(self, name, options, ip, to_match, db):
+   def __init__(self, name, options, ip_list, to_match, db):
       threading.Thread.__init__(self)
       #self.threadID = threadID
       self.name = name
       self.options = options
-      self.ip = ip
+      self.ip = ip_list
       self.to_match = to_match
       self.db = db
    def run(self):
       logger.info("Starting " + self.name)
       smbHW = HW(self.options, self.db)
-      smbHW.shareAnalyzeLightning(self.ip, self.to_match)
+      logger.info("Tasks queue lenght: " + str(len(self.ip)))
+      while (len(self.ip) > 0):
+            smbHW.shareAnalyzeLightning(self.ip, self.to_match)
+      
       logger.info("Exiting " + self.name)
 
+   
 
 def setupPersistence(db, dbfile):
     if not os.path.exists(dbfile):
@@ -423,19 +424,27 @@ if __name__ == '__main__':
     db = Database(options.dbfile)
     setupPersistence(db, options.dbfile)
 
-    locker = Lock()
+    
     smbHW = HW(options, db)
     to_match = smbHW.readMatches()
     to_analyze = smbHW.scanNetwork()
+    threads = []
     if options.multithread is True: 
-
-        
-        #multithreading function call
         logger.info("Lighting!!")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=options.T) as executor:
-           while len(to_analyze) > 0:
-             smbHW = HW(options, db)
-             future = executor.submit(smbHW.shareAnalyzeLightning, to_analyze, to_match)                   
+        for i in range(options.T):            
+            try:
+                worker = smbworker("Worker-" + str(i+1), options, to_analyze, to_match, db)                
+                worker.start()
+                threads.append(worker)
+            except Exception as e: 
+                logger.error("Error while multithreading: " + str(e))
+                sys.exit(1)
+            
+
+        for thread in threads:
+            thread.join()          
+       
+                             
     else:     
         smbHW.shareAnalyze(to_analyze, to_match)
     if options.csv:
