@@ -21,6 +21,7 @@ The interesting keywords the tool should look for are defined via the command li
 * Should i export the results in two nice CSV files? 
 * How deep should i look into subfolders?
 * Wordlist of regular expression to match 
+* Domain Controller IP for ldap bind 
 * Other common ones and required 
 
 Of course everything is saved locally in a SQlite Database. The database containes one table for the "hopefully it's a DA password" match, called smbsr containing the 
@@ -73,6 +74,10 @@ SMBSR learned how to read:
 * .xlsx via xlrd
 * .xls via xlrd
 
+## LDAP 
+
+It is finally here! Now the domain credentials specified for SMB connections can also be used  in order to retrieve the list of computer objects from Active Directory.  
+
 ## reg_gen.py 
 
 As the last update SMBSR has been granted with the power of looking for secrets that match a given regular expression (see regulars.txt file containing some good examples to
@@ -93,11 +98,9 @@ For instance, from the project folder:
 ```bash
 ./smbsr.py -IP 127.0.0.1 -word-list-path tomatch.txt -multithread -max-size 1000 -T 2 -username OB -password '****' -domain OB -file-extensions dll,exe,bin
 ```
-## Coming Soon(?)
-
-* LDAP Integration in order to retrieve the list of computer objects
 
 # Credits 
 
 * Everyone who is going to help out finding issues and improving 
 * [Retrospected](https://github.com/Retrospected): For helping out every Friday with debugging the code and brainstorming on new features
+* [ropnop](https://github.com/ropnop): For the work done on windapsearch.py
