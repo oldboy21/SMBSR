@@ -3,7 +3,7 @@
 #
 # Author:
 #  @oldboy21
-#  https://github.com/oldboy21/SMBSR/ 
+#  https://github.com/oldboy21/smbsr/ 
 
 import socket
 import argparse
@@ -37,6 +37,7 @@ import time
 import io
 import string
 import textract
+import smbsrldap
 
 class Database:
     def __init__(self,db_file):
@@ -326,13 +327,20 @@ class HW(object):
        file_target = self.options.ip_list_path
        temp = []
        final = []
+       ldap_targets = []
+       #here it goes the LDAP check function
+       if self.options.ldap:
+           logger.info("Retrieving computer objects from LDAP")
+           ldapoptions =self.options
+           ldapoptions.username = self.options.domain + "\\" + self.options.username 
+           ldap_targets = smbsrldap.run(self.options)       
        if file_target != "unset":
          with open(file_target) as f:
            temp = [line.rstrip() for line in f]
          f.close()
        else: 
           temp.append(target)
-
+       temp = temp + ldap_targets
        for i in temp:        
           valid = re.match("^([0-9]{1,3}\.){3}[0-9]{1,3}($|/([0-9]{1,2}))$", i)        
           if not valid:
@@ -340,12 +348,14 @@ class HW(object):
                try:
                  final.append(socket.gethostbyname(i))
                except socket.gaierror: 
-                   logger.warning("\nHostname could not be resolved: " + i)
+                   logger.warning("Hostname could not be resolved: " + i)
                    
           else: 
               final.append(i)         
        ranges = ','.join(final)
        
+
+
        if not self.options.masscan:
           for x in final:
              ipcheck = re.match("^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$", x)
@@ -448,6 +458,9 @@ if __name__ == '__main__':
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-ip-list-path', action="store", default="unset", type=str, help="File containing IP to scan")
     group.add_argument('-IP',action="store", help='IP address, CIDR or hostname')
+    #ldapgroup = parser.add_mutually_inclusive_group()
+    parser.add_argument('-ldap', action='store_true', default=False, help='Query LDAP to retrieve the list of computer objects in a given domain')
+    parser.add_argument('-dc-ip', action='store', help='DC IP to bind to for LDAP authentication')
    
     options = parser.parse_args()
     faulthandler.enable()
