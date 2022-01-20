@@ -11,7 +11,8 @@ SMBSR consides someting interesting  basing on its:
 
 The interesting keywords the tool should look for are defined via the command line as well as: 
 
-* File extension blacklist
+* File extension blacklist (this list is automatically updated at runtime basing on the exception thrown by the thread and the file type) 
+* Shares blacklist
 * Folder blacklist (Watch out, also subfolders are gone)
 * Number of Threads
 * Should i masscan or not?
@@ -19,6 +20,7 @@ The interesting keywords the tool should look for are defined via the command li
 * Maximum file size (Bytes) allowed to be checked (Believe me, too big might take some time) 
 * Should i export the results in two nice CSV files? 
 * How deep should i look into subfolders?
+* Wordlist of regular expression to match 
 * Other common ones and required 
 
 Of course everything is saved locally in a SQlite Database. The database containes one table for the "hopefully it's a DA password" match, called smbsr containing the 
@@ -42,6 +44,41 @@ And also another table for the interesting file list containing the following co
 * Creation Date
 * Last Modified Date
 * Last Accessed Date
+
+## File Supported
+
+SMBSR learned how to read: 
+
+* .csv via python builtins
+* .doc via antiword
+* .docx via python-docx2txt
+* .eml via python builtins
+* .epub via ebooklib
+* .gif via tesseract-ocr
+* .jpg and .jpeg via tesseract-ocr
+* .json via python builtins
+* .html and .htm via beautifulsoup4
+* .mp3 via sox, SpeechRecognition, and pocketsphinx
+* .msg via msg-extractor
+* .odt via python builtins
+* .ogg via sox, SpeechRecognition, and pocketsphinx
+* .pdf via pdftotext (default) or pdfminer* .six
+* .png via tesseract-ocr
+* .pptx via python-pptx
+* .ps via ps2text
+* .rtf via unrtf
+* .tiff and .tif via tesseract-ocr
+* .txt via python builtins
+* .wav via SpeechRecognition and pocketsphinx
+* .xlsx via xlrd
+* .xls via xlrd
+
+## reg_gen.py 
+
+As the last update SMBSR has been granted with the power of looking for secrets that match a given regular expression (see regulars.txt file containing some good examples to
+to match). Given this new super power i have also implemented a new script which given a wordlist it generates a list of regular expression which match the password patterns
+it found into the wordlist. Before printing out everything the list of regular expression is (sort -u)-ed. The script can be optimized in case the pattern presents for example 
+two or more ascii_lower in a row, but it's not like that now. 
 
 ## Requirements
 
