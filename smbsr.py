@@ -3,7 +3,7 @@
 #
 # Author:
 #  @oldboy21
-#  https://github.com/oldboy21/smbsr/ 
+#  https://github.com/oldboy21/SMBSR/ 
 
 import socket
 import argparse
@@ -34,6 +34,9 @@ import faulthandler
 import concurrent.futures
 import gc
 import time
+import io
+import string
+import textract
 
 class Database:
     def __init__(self,db_file):
@@ -142,7 +145,16 @@ class HW(object):
         self.options = options 
         self.conn = SMBConnection(options.username,options.password,options.fake_hostname,'netbios-server-name',options.domain,use_ntlm_v2=True,is_direct_tcp=True) 
         self.db = db 
-        
+
+    def retrieveTextSpecial(self, file_object):
+        try:
+            #os.rename(file_object.name, file_object.name + ".docx")
+            text = textract.process(file_object.name)
+                
+            return text      
+        except Exception as e: 
+            logger.error("Error while parsing special file")
+
 
     def get_bool(self,prompt):
         while True:
@@ -165,26 +177,38 @@ class HW(object):
     def passwordHW(self,text, filename,to_match, counter, IP, share):
         results = []
         output = False
-        for substring in to_match: 
+
+        words =to_match["words"]
+        regex = to_match["regex"]
+        
+        for substring in words: 
             results.append(substring.lower() in text.lower())
         output=any(results)        
         if output: 
             m = [i for i, x in enumerate(results) if x]
             for z in m:
-                logger.info("Found interesting match in " + filename + " with " + to_match[z] +", line: " + str(counter)) 
-                self.db.insertFinding(filename, share, IP, str(counter), to_match[z], self.retrieveTimes(share,filename))   
+                logger.info("Found interesting match in " + filename + " with " + words[z] +", line: " + str(counter)) 
+                self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename))   
+        if len(regex) > 0:
+
+            for i in regex:        
+                if re.search(i, text):
+                    logger.info("Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
+                    self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename))  
+
 
     def parse(self, share, filename, to_match, IP):
         line_counter = 0 
         file_obj = tempfile.NamedTemporaryFile()
         file_ext = (filename.split('/')[-1]).split('.')[-1]
-        if file_ext.lower() in self.options.file_extensions_black.split(','):
+        file_ext_double = (filename.split('/')[-1]).split('.')[-2]
+        if file_ext.lower() in self.options.file_extensions_black.split(',') or file_ext_double.lower() in self.options.file_extensions_black.split(','):
             logger.info("This extensions is blacklisted")
         else:
             if file_ext.lower() in self.options.file_interesting.split(','):
                logger.info("Found interesting file: " + filename)
                self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename))
-            if (filename.split('/')[-1]).split('.')[0].lower() in to_match:
+            if (filename.split('/')[-1]).split('.')[0].lower() in to_match["words"]:
                logger.info("Found interesting file named " + filename)
                self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename))      
             
@@ -194,16 +218,28 @@ class HW(object):
 
             else:
                 file_attributes, filesize = self.conn.retrieveFile(share, filename, file_obj)
-                file_obj.seek(0)
-                lines = file_obj.readlines()
+                #here the extension check for office files 
+                if file_ext.lower() in ['docx','doc','docx','eml','epub','gif','jpg','mp3','msg','odt','ogg','pdf','png','pptx','ps','rtf','tiff','tif','wav','xlsx','xls']:
+                    specialfile = open(str(''.join(random.choices(string.ascii_uppercase, k = 5))) + "." +file_ext , "ab")
+                    file_attributes, filesize = self.conn.retrieveFile(share, filename, specialfile)
+                    lines = (self.retrieveTextSpecial(specialfile)).split(b'\n')
+                    specialfile.close()
+                    os.remove(specialfile.name)
+
+                else:
+                    file_obj.seek(0)                
+                    lines = file_obj.readlines()
+
                 for line in lines: 
                   line_counter+=1 
                   try: 
                    self.passwordHW((line.decode("utf-8")).strip("\n"), filename,to_match, line_counter, IP, share) 
                   except Exception as e: 
-                     logger.warning("Encountered exception while reading: " + str(e))
+                     logger.warning("Encountered exception while reading file: " + file_ext + " | Exception: " + str(e))
+                     if 'b' in file_obj.mode or isinstance(file_obj, (io.RawIOBase, io.BufferedIOBase)):
+                        self.options.file_extensions_black = self.options.file_extensions_black + "," + file_ext
                      break
-            file_obj.close()                                      
+        file_obj.close()                                      
     
 
     def walk_path(self,path,shared_folder,IP,to_match):
@@ -254,7 +290,7 @@ class HW(object):
            logger.warning("Detected error while listing shares on "  + str(ip) + " with message " + str(e)) 
            continue 
          for share in shares:
-             if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$']:
+             if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$'] and share.name not in self.options.share_black.split(','):
                 logger.info('Listing file in share: ' + share.name)
                 try:
                    sharedfiles = self.conn.listPath(share.name, '/')
@@ -274,7 +310,7 @@ class HW(object):
           self.conn.connect(ip, 445)          
           shares = self.conn.listShares()
           for share in shares:
-            if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$']: 
+            if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$'] and share.name not in self.options.share_black.split(','): 
                    logger.info('Listing file in share: ' + share.name)
                    self.walk_path("/",share.name,ip, to_match)
        except Exception as e:
@@ -332,14 +368,31 @@ class HW(object):
 
     def readMatches(self):
         filepath = self.options.word_list_path
+        file_regular = self.options.regular_exp
+        rlines = []
         try: 
            with open(filepath) as f:
              lines = [line.rstrip() for line in f]
            f.close()
-           return lines
+           #return lines
         except Exception as e:
             logger.error("Exception while reading the file " + str(e))
             sys.exit(1)   
+        if file_regular != 'unset':
+            
+            try: 
+                with open(file_regular) as r:
+                    rlines = [line.rstrip() for line in r]
+                r.close()
+            except Exception as e:
+                logger.error("Exception while reading the regular expression file " + str(e))
+                
+        to_match_dict = {
+
+        "words" : lines,
+        "regex" : rlines
+        } 
+        return to_match_dict
 
 
 class smbworker (threading.Thread):
@@ -390,6 +443,8 @@ if __name__ == '__main__':
     parser.add_argument('-folder-black', action='store', default='none', type=str, help='Comma separated folder names to skip during the analysis, keep in mind subfolders are also skipped')
     parser.add_argument('-csv', action='store_true', default=False, help='Export results to CSV files in the project folder')
     parser.add_argument('-depth', action='store', default=100000000, type=int, help='How recursively deep you want to go while looking for secrets')
+    parser.add_argument('-regular-exp', action="store", default='unset' ,type=str, help="File containing regex expression to match")
+    parser.add_argument('-share-black', action='store', type=str, default='none', help='Comma separated share names to skip while secrets harvesting')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-ip-list-path', action="store", default="unset", type=str, help="File containing IP to scan")
     group.add_argument('-IP',action="store", help='IP address, CIDR or hostname')
@@ -431,6 +486,8 @@ if __name__ == '__main__':
     threads = []
     if options.multithread is True: 
         logger.info("Lighting!!")
+        if len(to_analyze) < options.T:
+            options.T = len(to_analyze)
         for i in range(options.T):            
             try:
                 worker = smbworker("Worker-" + str(i+1), options, to_analyze, to_match, db)                
