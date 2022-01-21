@@ -154,7 +154,8 @@ class HW(object):
                 
             return text      
         except Exception as e: 
-            logger.error("Error while parsing special file")
+            os.remove(file_object.name)
+            logger.error("Error while parsing special file " + file_object.name + " with exception: " + str(e))
 
 
     def get_bool(self,prompt):
@@ -178,7 +179,7 @@ class HW(object):
     def passwordHW(self,text, filename,to_match, counter, IP, share):
         results = []
         output = False
-
+        
         words =to_match["words"]
         regex = to_match["regex"]
         
@@ -189,21 +190,26 @@ class HW(object):
             m = [i for i, x in enumerate(results) if x]
             for z in m:
                 logger.info("Found interesting match in " + filename + " with " + words[z] +", line: " + str(counter)) 
-                self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename))   
+                self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename))
+                return True    
         if len(regex) > 0:
 
             for i in regex:        
                 if re.search(i, text):
                     logger.info("Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
-                    self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename))  
+                    self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename))
+                    return True
+        return False              
 
 
     def parse(self, share, filename, to_match, IP):
         line_counter = 0 
+        hits = 0 
         file_obj = tempfile.NamedTemporaryFile()
-        file_ext = (filename.split('/')[-1]).split('.')[-1]
-        file_ext_double = (filename.split('/')[-1]).split('.')[-2]
-        if file_ext.lower() in self.options.file_extensions_black.split(',') or file_ext_double.lower() in self.options.file_extensions_black.split(','):
+        file_ext = (filename.split('/')[-1]).split('.')[-1] or "empty"
+        #file_ext_double = (filename.split('/')[-1]).split('.')[-2] or "empty"
+        # or file_ext_double.lower() in self.options.file_extensions_black.split(',')
+        if file_ext.lower() in self.options.file_extensions_black.split(','):
             logger.info("This extensions is blacklisted")
         else:
             if file_ext.lower() in self.options.file_interesting.split(','):
@@ -225,21 +231,29 @@ class HW(object):
                     file_attributes, filesize = self.conn.retrieveFile(share, filename, specialfile)
                     lines = (self.retrieveTextSpecial(specialfile)).split(b'\n')
                     specialfile.close()
-                    os.remove(specialfile.name)
+                    try:
+                        os.remove(specialfile.name)
+                    except Exception as e:
+                        logger.warning("Error deleting the temp file: " + specialfile.name)    
 
                 else:
                     file_obj.seek(0)                
                     lines = file_obj.readlines()
 
-                for line in lines: 
-                  line_counter+=1 
-                  try: 
-                   self.passwordHW((line.decode("utf-8")).strip("\n"), filename,to_match, line_counter, IP, share) 
-                  except Exception as e: 
-                     logger.warning("Encountered exception while reading file: " + file_ext + " | Exception: " + str(e))
-                     if 'b' in file_obj.mode or isinstance(file_obj, (io.RawIOBase, io.BufferedIOBase)):
-                        self.options.file_extensions_black = self.options.file_extensions_black + "," + file_ext
-                     break
+                if len(lines) > 0: 
+                  for line in lines: 
+                    line_counter+=1 
+                    try: 
+                     if self.passwordHW((line.decode("utf-8")).strip("\n"), filename,to_match, line_counter, IP, share):
+                          hits += 1
+                          if hits >= options.hits:
+                              logger.info("Reached max hits for " + filename)
+                              break  
+                    except Exception as e: 
+                       logger.warning("Encountered exception while reading file: " + file_ext + " | Exception: " + str(e))
+                       if isinstance(file_obj, (io.RawIOBase, io.BufferedIOBase)):
+                          self.options.file_extensions_black = self.options.file_extensions_black + "," + file_ext
+                       break
         file_obj.close()                                      
     
 
@@ -270,7 +284,9 @@ class HW(object):
                                continue  
                      else:
                          logger.info( 'File: '+ parentPath+p.filename )
+                         
                          self.parse(shared_folder, parentPath+p.filename, to_match, IP)
+                           
            except Exception as e: 
               logger.warning("Error while listing paths in shares: " + str(e))               
     
@@ -341,6 +357,7 @@ class HW(object):
        else: 
           temp.append(target)
        temp = temp + ldap_targets
+       temp = list( dict.fromkeys(temp) )
        for i in temp:        
           valid = re.match("^([0-9]{1,3}\.){3}[0-9]{1,3}($|/([0-9]{1,2}))$", i)        
           if not valid:
@@ -421,6 +438,7 @@ class smbworker (threading.Thread):
       while (len(self.ip) > 0):
             smbHW.shareAnalyzeLightning(self.ip, self.to_match)
       
+      logger.info("Tasks queue lenght: " + str(len(self.ip)))
       logger.info("Exiting " + self.name)
 
    
@@ -461,6 +479,7 @@ if __name__ == '__main__':
     #ldapgroup = parser.add_mutually_inclusive_group()
     parser.add_argument('-ldap', action='store_true', default=False, help='Query LDAP to retrieve the list of computer objects in a given domain')
     parser.add_argument('-dc-ip', action='store', help='DC IP to bind to for LDAP authentication')
+    parser.add_argument('-hits', action='store',default=5000 ,type=int, help='Max findings per file')
    
     options = parser.parse_args()
     faulthandler.enable()
@@ -496,6 +515,7 @@ if __name__ == '__main__':
     smbHW = HW(options, db)
     to_match = smbHW.readMatches()
     to_analyze = smbHW.scanNetwork()
+    logger.info("Total amounts of targets: " + str(len(to_analyze)))
     threads = []
     if options.multithread is True: 
         logger.info("Lighting!!")
