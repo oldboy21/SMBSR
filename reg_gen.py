@@ -46,5 +46,8 @@ for line in lines:
 
 final = list( dict.fromkeys(final) )
 
-for x in final:
-	print (x) 
+with open("regulars.txt", "a") as f:
+   for x in final:
+       f.write(x + "\n")
+f.close()
+	 
