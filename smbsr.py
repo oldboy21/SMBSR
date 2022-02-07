@@ -151,11 +151,12 @@ class HW(object):
         try:
             #os.rename(file_object.name, file_object.name + ".docx")
             text = textract.process(file_object.name)
-                
-            return text      
+                           
+            return text     
         except Exception as e: 
             os.remove(file_object.name)
             logger.error("Error while parsing special file " + file_object.name + " with exception: " + str(e))
+            return "textractfailed"
 
 
     def get_bool(self,prompt):
@@ -229,29 +230,36 @@ class HW(object):
                 if file_ext.lower() in ['docx','doc','docx','eml','epub','gif','jpg','mp3','msg','odt','ogg','pdf','png','pptx','ps','rtf','tiff','tif','wav','xlsx','xls']:
                     specialfile = open(str(''.join(random.choices(string.ascii_uppercase, k = 5))) + "." +file_ext , "ab")
                     file_attributes, filesize = self.conn.retrieveFile(share, filename, specialfile)
-                    lines = (self.retrieveTextSpecial(specialfile)).split(b'\n')
+                    #this mightbe empty AND GENERATE AND EXCEPTION
+                    lines = (self.retrieveTextSpecial(specialfile))
                     specialfile.close()
-                    try:
-                        os.remove(specialfile.name)
-                    except Exception as e:
-                        logger.warning("Error deleting the temp file: " + specialfile.name)    
+                    if lines != "textractfailed":
+                        lines = lines.split(b' ')                        
+                        try:
+                            os.remove(specialfile.name)
+                        except Exception as e:
+                            logger.warning("Error deleting the temp file: " + specialfile.name)    
 
                 else:
                     file_obj.seek(0)                
                     lines = file_obj.readlines()
+                    #need to work on the lines here bcs the strip with bytes does not work apparently 
+                    
 
-                if len(lines) > 0: 
+                if len(lines) > 0 and lines != "textractfailed": 
                   for line in lines: 
+                    
                     line_counter+=1 
                     try: 
-                     if self.passwordHW((line.decode("utf-8")).strip("\n"), filename,to_match, line_counter, IP, share):
+                        
+                     if self.passwordHW((line.decode('utf-8')).strip('\n'), filename,to_match, line_counter, IP, share):
                           hits += 1
                           if hits >= options.hits:
                               logger.info("Reached max hits for " + filename)
                               break  
                     except Exception as e: 
                        logger.warning("Encountered exception while reading file: " + file_ext + " | Exception: " + str(e))
-                       if isinstance(file_obj, (io.RawIOBase, io.BufferedIOBase)):
+                       if isinstance(file_obj, (io.RawIOBase, io.BufferedIOBase)): #using filetype different from none? 
                           self.options.file_extensions_black = self.options.file_extensions_black + "," + file_ext
                        break
         file_obj.close()                                      
@@ -336,6 +344,14 @@ class HW(object):
 
        self.conn.close()
        
+    def extractCIDR(self,final ):
+        cidr = []
+        for target in final: 
+            ipcheck = re.match("^([0-9]{1,3}\.){3}[0-9]{1,3}(\/([0-9]{1,2}))$", target)
+            if ipcheck: 
+                cidr.append(target)
+        return cidr 
+
 
 
     def scanNetwork(self):
@@ -344,6 +360,7 @@ class HW(object):
        temp = []
        final = []
        ldap_targets = []
+       to_analyze = []
        #here it goes the LDAP check function
        if self.options.ldap:
            logger.info("Retrieving computer objects from LDAP")
@@ -368,9 +385,16 @@ class HW(object):
                    logger.warning("Hostname could not be resolved: " + i)
                    
           else: 
-              final.append(i)         
-       ranges = ','.join(final)
+              final.append(i)
+       cidrs = list(dict.fromkeys(self.extractCIDR(final)))
+       final = list(dict.fromkeys(final))
+       #print (cidrs == final)
+       for i in cidrs:
+         if i in final:            
+            final.remove(i)
+
        
+       ranges = ','.join(final)
 
 
        if not self.options.masscan:
@@ -380,13 +404,28 @@ class HW(object):
                 logger.error("Hey there, if you do not use masscan you can't give me CIDR as input")
                 sys.exit(1)
           return final      
-
-       mass = masscan.PortScanner()
-       mass.scan(ranges, ports='445', arguments='--rate 1000')        
-
-       to_analyze = []
        logger.info('Starting masscan to discover SMB ports open')
-
+       mass = masscan.PortScanner()
+       if len(cidrs) > 0: 
+            for ni in cidrs:
+                try:
+                   mass.scan(ni, ports='445', arguments='--rate 1000') 
+                   for key in mass.scan_result['scan']:
+                      if mass.scan_result['scan'][key]['tcp'][445]['state'] == 'open':
+                             to_analyze.append(key)       
+                except Exception as e: 
+                   logger.error("masscan failed with error: " + str(e) + " for range: " + str(ni))
+                   
+       print (ranges)
+       print (len(ranges))
+       try:
+          mass.scan(ranges, ports='445', arguments='--rate 1000')        
+       except Exception as e: 
+          logger.error("masscan failed with error: " + str(e))
+          
+          sys.exit(1)
+       
+       
        for key in mass.scan_result['scan']:
          if mass.scan_result['scan'][key]['tcp'][445]['state'] == 'open':
                 to_analyze.append(key)
