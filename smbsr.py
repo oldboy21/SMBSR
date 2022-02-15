@@ -375,8 +375,13 @@ class HW(object):
           temp.append(target)
        temp = temp + ldap_targets
        temp = list( dict.fromkeys(temp) )
+       
        for i in temp:        
-          valid = re.match("^([0-9]{1,3}\.){3}[0-9]{1,3}($|/([0-9]{1,2}))$", i)        
+          try:
+            valid = re.match("^([0-9]{1,3}\.){3}[0-9]{1,3}($|\/([0-9]{1,2}))$", i) 
+          except Exception as e: 
+            logger.warning("exception reading from initial list")
+            continue        
           if not valid:
                logger.info("You entered an hostname, looking up " + i)
                try:
@@ -386,15 +391,17 @@ class HW(object):
                    
           else: 
               final.append(i)
+
+       
        cidrs = list(dict.fromkeys(self.extractCIDR(final)))
        final = list(dict.fromkeys(final))
-       #print (cidrs == final)
+
+       
        for i in cidrs:
          if i in final:            
             final.remove(i)
 
-       
-       ranges = ','.join(final)
+
 
 
        if not self.options.masscan:
@@ -416,19 +423,17 @@ class HW(object):
                 except Exception as e: 
                    logger.error("masscan failed with error: " + str(e) + " for range: " + str(ni))
                    
-       print (ranges)
-       print (len(ranges))
-       try:
-          mass.scan(ranges, ports='445', arguments='--rate 1000')        
-       except Exception as e: 
-          logger.error("masscan failed with error: " + str(e))
-          
-          sys.exit(1)
-       
-       
-       for key in mass.scan_result['scan']:
-         if mass.scan_result['scan'][key]['tcp'][445]['state'] == 'open':
-                to_analyze.append(key)
+       if len(final) > 0:
+            ranges = ','.join(final)
+            try:
+               mass.scan(ranges, ports='445', arguments='--rate 1000')        
+            except Exception as e: 
+               logger.error("masscan failed with error: " + str(e))               
+               sys.exit(1)
+              
+            for key in mass.scan_result['scan']:
+              if mass.scan_result['scan'][key]['tcp'][445]['state'] == 'open':
+                     to_analyze.append(key)
 
        return to_analyze
 
