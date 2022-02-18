@@ -366,7 +366,8 @@ class HW(object):
            logger.info("Retrieving computer objects from LDAP")
            ldapoptions =self.options
            ldapoptions.username = self.options.domain + "\\" + self.options.username 
-           ldap_targets = smbsrldap.run(self.options)       
+           ldap_targets = smbsrldap.run(ldapoptions)           
+           self.options.username = (self.options.username.split('\\')[1])       
        if file_target != "unset":
          with open(file_target) as f:
            temp = [line.rstrip() for line in f]
@@ -385,7 +386,10 @@ class HW(object):
           if not valid:
                logger.info("You entered an hostname, looking up " + i)
                try:
-                 final.append(socket.gethostbyname(i))
+                 ldapt = (socket.gethostbyname(i)).strip('\n')
+                 
+                 final.append(ldapt)
+
                except socket.gaierror: 
                    logger.warning("Hostname could not be resolved: " + i)
                    
@@ -559,6 +563,8 @@ if __name__ == '__main__':
     smbHW = HW(options, db)
     to_match = smbHW.readMatches()
     to_analyze = smbHW.scanNetwork()
+    #TO REMOVE 
+    
     logger.info("Total amounts of targets: " + str(len(to_analyze)))
     threads = []
     if options.multithread is True: 
@@ -567,6 +573,7 @@ if __name__ == '__main__':
             options.T = len(to_analyze)
         for i in range(options.T):            
             try:
+                
                 worker = smbworker("Worker-" + str(i+1), options, to_analyze, to_match, db)                
                 worker.start()
                 threads.append(worker)
