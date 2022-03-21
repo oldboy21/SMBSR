@@ -74,12 +74,18 @@ class Database:
                                 tsAccessed text NOT NULL
 
                             ); """
+            smb_write_table = """ CREATE TABLE IF NOT EXISTS smbwriterights (
+                                shareIp text PRIMARY KEY,                                
+                                writable integer NOT NULL
+
+                            ); """                            
                                 
     
 
             if self.cursor is not None:
                 self.create_table(smb_match_table)
                 self.create_table(smb_files_table)
+                self.create_table(smb_write_table)
         except Exception as e: 
           logger.error("Encountered error while creating the database: " + str(e))
           sys.exit(1)
@@ -88,6 +94,7 @@ class Database:
         cursor = self.cursor
         exportQuery = "SELECT * from smbsr"
         exportQueryFile = "SELECT * from smbfile"
+        exportWritableQuery = "SELECT * from smbwriterights"
         sr = cursor.execute(exportQuery)
         with open('smbsr_results.csv', 'w') as f:
             writer = csv.writer(f)
@@ -96,7 +103,10 @@ class Database:
         with open('smbsrfile_results.csv', 'w') as g:
             writer = csv.writer(g)
             writer.writerows(sf)    
-
+        sw = cursor.execute(exportWritableQuery)
+        with open('smbsrwritable_results.csv', 'w') as h:
+            writer = csv.writer(h)
+            writer.writerows(sw)    
 
 
 
@@ -137,7 +147,18 @@ class Database:
            cursor.execute(insertFindingQuery, (filename, share, ip, times[0], times[1], times[2]))
            self.commit()  
          finally: 
-            self.lock.release()         
+            self.lock.release()
+
+    def insertWritableCount(self, share, ip, writable):
+         
+         try: 
+           self.lock.acquire(True)         
+           cursor = self.cursor
+           insertWritableQuery = "INSERT INTO smbwriterights (shareIp, writable) VALUES (?,?) ON CONFLICT(shareIp) DO UPDATE SET writable=?"
+           cursor.execute(insertWritableQuery, (share+"/"+ip, writable, writable))
+           self.commit()  
+         finally: 
+            self.lock.release()                        
                 
 
 class HW(object):
@@ -266,9 +287,11 @@ class HW(object):
     
 
     def walk_path(self,path,shared_folder,IP,to_match):
-           #print (depth)
+           count = 0 
            try:
              for p in self.conn.listPath(shared_folder, path):
+                 
+
                  if p.filename!='.' and p.filename!='..':
                      parentPath = path
                      if not parentPath.endswith('/'):
@@ -284,7 +307,7 @@ class HW(object):
                               
                               logger.info("Visiting subfolder " + str(p.filename))  
 
-                              self.walk_path(parentPath+p.filename,shared_folder,IP,to_match)
+                              count = count + self.walk_path(parentPath+p.filename,shared_folder,IP,to_match)
                               
                             else:
                                logger.info("Skipping " + str(parentPath+p.filename) + ", too deep")
@@ -292,11 +315,18 @@ class HW(object):
                                continue  
                      else:
                          logger.info( 'File: '+ parentPath+p.filename )
-                         
+                         if  not p.isReadOnly:
+                            
+                            count+=1
+                            
+                            self.db.insertWritableCount(shared_folder,IP,count) 
                          self.parse(shared_folder, parentPath+p.filename, to_match, IP)
-                           
+           
+             return count               
            except Exception as e: 
-              logger.warning("Error while listing paths in shares: " + str(e))               
+              logger.warning("Error while listing paths in shares: " + str(e))  
+
+                            
     
 
     def shareAnalyze(self,IPaddress, to_match):
@@ -311,6 +341,7 @@ class HW(object):
              continue  
          try:   
            shares = self.conn.listShares()
+
          except Exception as e:
            logger.warning("Detected error while listing shares on "  + str(ip) + " with message " + str(e)) 
            continue 
@@ -335,6 +366,7 @@ class HW(object):
           self.conn.connect(ip, 445)          
           shares = self.conn.listShares()
           for share in shares:
+
             if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$'] and share.name not in self.options.share_black.split(','): 
                    logger.info('Listing file in share: ' + share.name)
                    self.walk_path("/",share.name,ip, to_match)
