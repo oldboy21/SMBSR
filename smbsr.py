@@ -432,7 +432,7 @@ class HW(object):
        cidrs = list(dict.fromkeys(self.extractCIDR(final)))
        final = list(dict.fromkeys(final))
 
-       
+
        for i in cidrs:
          if i in final:            
             final.remove(i)
@@ -441,6 +441,9 @@ class HW(object):
 
 
        if not self.options.masscan:
+          if len(final) == 0 and len(cidrs) > 0: #case only one input is given and it is a CIDR
+            logger.error("Hey there, if you do not use masscan you can't give me CIDR as input")
+            sys.exit(1)
           for x in final:
              ipcheck = re.match("^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$", x)
              if not ipcheck: 
