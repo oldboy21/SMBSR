@@ -38,6 +38,7 @@ import io
 import string
 import textract
 import smbsrldap
+import ldaphelper
 
 class Database:
     def __init__(self,db_file):
@@ -291,13 +292,13 @@ class HW(object):
            try:
              for p in self.conn.listPath(shared_folder, path):
                  
-
+                 
                  if p.filename!='.' and p.filename!='..':
                      parentPath = path
                      if not parentPath.endswith('/'):
                          parentPath += '/'
                      if p.isDirectory:   
-
+                         
                          if p.filename.lower() in self.options.folder_black.split(','):
                            logger.info('Skipping ' + p.filename + " since blacklisted")   
 
@@ -306,12 +307,14 @@ class HW(object):
                             if parentPath.count('/') <= self.options.depth: 
                               
                               logger.info("Visiting subfolder " + str(p.filename))  
-
-                              count = count + self.walk_path(parentPath+p.filename,shared_folder,IP,to_match)
-                              
+                              try:
+                                 count = count + self.walk_path(parentPath+p.filename,shared_folder,IP,to_match)
+                              except Exception as e:
+                                  logger.error("Error while accessing folder: " + parentPath+p.filename)
+                                  continue
+                              #IF IT FAILS WITH A FOLDER IT SHOULD TRY TO MOVE FORWARD 
                             else:
-                               logger.info("Skipping " + str(parentPath+p.filename) + ", too deep")
-                               
+                               logger.info("Skipping " + str(parentPath+p.filename) + ", too deep")                              
                                continue  
                      else:
                          logger.info( 'File: '+ parentPath+p.filename )
@@ -324,7 +327,8 @@ class HW(object):
            
              return count               
            except Exception as e: 
-              logger.warning("Error while listing paths in shares: " + str(e))  
+              logger.warning("Error while listing paths in shares: " + str(e))
+
 
                             
     
@@ -349,7 +353,7 @@ class HW(object):
              if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$'] and share.name not in self.options.share_black.split(','):
                 logger.info('Listing file in share: ' + share.name)
                 try:
-                   sharedfiles = self.conn.listPath(share.name, '/')
+                   sharedfiles = self.conn.listPath(share.name, '/') ##THIS CHECK IS NOT ENOUGH IF IT FAILS ON A FOLDER
                 except Exception as e:  
                     logger.warning("Detected error while listing shares on "  + str(ip) + " with message " + str(e)) 
                     continue
@@ -395,11 +399,15 @@ class HW(object):
        to_analyze = []
        #here it goes the LDAP check function
        if self.options.ldap:
-           logger.info("Retrieving computer objects from LDAP")
-           ldapoptions =self.options
-           ldapoptions.username = self.options.domain + "\\" + self.options.username 
-           ldap_targets = smbsrldap.run(ldapoptions)           
-           self.options.username = (self.options.username.split('\\')[1])       
+           logger.info("Retrieving computer objects from LDAP. KINIT process might take some time, be patient")
+           #ldapoptions =self.options
+           #ldapoptions.username = self.options.domain + "\\" + self.options.username 
+           ldaphelperQ = ldaphelper.LDAPHelper(self.options)
+           ldaphelperQ.kerberosAuth()
+           ldap_targets = ldaphelperQ.retrieveComputerObjects()
+           #ldap_targets = smbsrldap.run(ldapoptions)           
+           #self.options.username = (self.options.username.split('\\')[1])
+                
        if file_target != "unset":
          with open(file_target) as f:
            temp = [line.rstrip() for line in f]
@@ -407,6 +415,7 @@ class HW(object):
        else: 
           temp.append(target)
        temp = temp + ldap_targets
+
        temp = list( dict.fromkeys(temp) )
        
        for i in temp:        
@@ -560,11 +569,16 @@ if __name__ == '__main__':
     group.add_argument('-ip-list-path', action="store", default="unset", type=str, help="File containing IP to scan")
     group.add_argument('-IP',action="store", help='IP address, CIDR or hostname')
     #ldapgroup = parser.add_mutually_inclusive_group()
+    parser.add_argument('-fqdn', action='store', help='FQDN for KINIT')
     parser.add_argument('-ldap', action='store_true', default=False, help='Query LDAP to retrieve the list of computer objects in a given domain')
-    parser.add_argument('-dc-ip', action='store', help='DC IP to bind to for LDAP authentication')
+    parser.add_argument('-dc-ip', action='store', help='DC IP of the domain you want to retrieve computer objects from')
     parser.add_argument('-hits', action='store',default=5000 ,type=int, help='Max findings per file')
    
+
     options = parser.parse_args()
+
+    if options.ldap and not options.fqdn: 
+        parser.error ('If you want to retrieve computer objects from LDAP please provide a FQDN to retrieve your TGT')
     faulthandler.enable()
     formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
 
