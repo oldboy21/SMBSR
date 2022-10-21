@@ -90,6 +90,10 @@ two or more ascii_lower in a row, but it's not like that now.
 ```bash
 pip3 install -r requirements.txt
 ```
+Please also do install:
+
+* krb5
+* libkrb5-dev
 
 ## Usage
 

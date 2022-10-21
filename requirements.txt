@@ -1,3 +1,5 @@
+ldap3==2.8
 pysmb==1.2.7
 python_masscan==0.1.6
-textract
+textract==1.6.4
+gssapi
