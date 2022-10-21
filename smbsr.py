@@ -37,7 +37,6 @@ import time
 import io
 import string
 import textract
-import smbsrldap
 import ldaphelper
 
 class Database:
