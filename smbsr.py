@@ -412,10 +412,11 @@ class HW(object):
           start_dir="/"+"/".join(target.split("/")[4:])
           logger.info(f"[{self.workername}] Connecting to: {host} on share {share} with startdir {start_dir}")
           try:
-             self.conn.connect(target, 445)  
+             self.conn.connect(target, 445)
+             self.walk_path(start_dir,share,host, to_match)  
           except Exception as e: 
              logger.warning(f"[{self.workername}] Detected error while connecting to " + str(target) + " with message " + str(e))
-          self.walk_path(start_dir,share,host, to_match)
+          
        else: 
           try:
              self.conn.connect(ip, 445)  
