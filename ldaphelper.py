@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from ldap3 import Connection, Server, ANONYMOUS, SIMPLE, SYNC, ASYNC, KERBEROS
-from ldap3 import Server, Connection, SAFE_SYNC, SASL, GSSAPI, DSA, SUBTREE
+from ldap3 import Server, Connection, SAFE_SYNC, SASL, GSSAPI, DSA, SUBTREE, NTLM
 from subprocess import Popen, PIPE
 import ldap3 
 import json 
@@ -11,6 +11,8 @@ class LDAPHelper():
 
     def __init__(self, options):
         self.options = options
+
+
 
     def kerberosAuth(self):
         userid = self.options.username
@@ -33,6 +35,52 @@ class LDAPHelper():
           
         except Exception as e: 
           print ("exception in LDAP Connection")  
+          print (e)        
+
+        dn = server.info.other["defaultNamingContext"][0]        
+
+        #status, result, response, _ = conn.search(dn, '(objectClass=Computer)', attributes=['dNSHostName'], paged_size=2000)
+        status, result, response, _ = conn.search(dn, '(&(objectCategory=Computer)(name=*))',search_scope=SUBTREE, attributes=['dNSHostName'], paged_size=500)        
+        
+        
+
+        computerObjectsList = []
+        total_entries = len(response)
+        for co in response:
+           try: 
+               computerObjectsList.append((co['attributes']['dNSHostName'])[0])
+               #print ((co['attributes']['dNSHostName'])[0])
+           except Exception as e: 
+                print("Error retrieving dNSHostName for ")
+                print(co) 
+
+        cookie = conn.result['controls']['1.2.840.113556.1.4.319']['value']['cookie']
+        while cookie:
+            status, result, response, _ = conn.search(dn, '(&(objectCategory=Computer)(name=*))',search_scope=SUBTREE, attributes=['dNSHostName'],paged_size = 500,paged_cookie = cookie)
+            total_entries += len(response)
+            for co in response:
+              try: 
+               computerObjectsList.append((co['attributes']['dNSHostName'])[0])
+              except Exception as e: 
+                print("Error retrieving dNSHostName for ")
+                print(co) 
+            cookie = conn.result['controls']['1.2.840.113556.1.4.319']['value']['cookie']        
+        print ("Retrieved computer objects: ")
+        print (total_entries)
+        return computerObjectsList
+
+
+    def retrieveComputerObjectsNTLM(self):
+
+  
+        server = Server(self.options.dc_ip,get_info=DSA)
+        authstring = self.options.fqdn+"\\"+self.options.username
+ 
+        try:
+          conn = Connection(server, authstring, password=self.options.password, client_strategy=SAFE_SYNC, auto_bind=True, authentication=NTLM)
+          
+        except Exception as e: 
+          print ("exception in LDAP Connection [NTLM]")  
           print (e)        
 
         dn = server.info.other["defaultNamingContext"][0]        

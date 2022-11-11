@@ -162,11 +162,31 @@ class Database:
                 
 
 class HW(object):
-    def __init__(self, options, db):
+    def __init__(self, workername, options, db):
         super(HW, self).__init__()
         self.options = options 
+        self.workername = workername
         self.conn = SMBConnection(options.username,options.password,options.fake_hostname,'netbios-server-name',options.domain,use_ntlm_v2=True,is_direct_tcp=True) 
         self.db = db 
+
+    def dnsLookup(self, target):
+          try:
+            valid = re.match("^([0-9]{1,3}\.){3}[0-9]{1,3}($|\/([0-9]{1,2}))$", target) 
+          except Exception as e: 
+            logger.warning(f"[{self.workername}] exception reading from initial list")
+                    
+          if not valid:
+               logger.info(f"[{self.workername}] You entered an hostname, looking up " + i)
+               try:
+                 ip = (socket.gethostbyname(target)).strip('\n')
+                 
+                 return ip
+
+               except socket.gaierror: 
+                   logger.warning(f"[{self.workername}] Hostname could not be resolved: " + i)
+                   
+          else: 
+              return target    
 
     def retrieveTextSpecial(self, file_object):
         try:
@@ -176,7 +196,7 @@ class HW(object):
             return text     
         except Exception as e: 
             os.remove(file_object.name)
-            logger.error("Error while parsing special file " + file_object.name + " with exception: " + str(e))
+            logger.error(f"[{self.workername}] Error while parsing special file " + file_object.name + " with exception: " + str(e))
             return "textractfailed"
 
 
@@ -211,14 +231,14 @@ class HW(object):
         if output: 
             m = [i for i, x in enumerate(results) if x]
             for z in m:
-                logger.info("Found interesting match in " + filename + " with " + words[z] +", line: " + str(counter)) 
+                logger.info(f"[{self.workername}] Found interesting match in " + filename + " with " + words[z] +", line: " + str(counter)) 
                 self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename))
                 return True    
         if len(regex) > 0:
 
             for i in regex:        
                 if re.search(i, text):
-                    logger.info("Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
+                    logger.info(f"[{self.workername}] Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
                     self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename))
                     return True
         return False              
@@ -232,18 +252,18 @@ class HW(object):
         #file_ext_double = (filename.split('/')[-1]).split('.')[-2] or "empty"
         # or file_ext_double.lower() in self.options.file_extensions_black.split(',')
         if file_ext.lower() in self.options.file_extensions_black.split(','):
-            logger.info("This extensions is blacklisted")
+            logger.info(f"[{self.workername}] This extensions is blacklisted")
         else:
             if file_ext.lower() in self.options.file_interesting.split(','):
-               logger.info("Found interesting file: " + filename)
+               logger.info(f"[{self.workername}] Found interesting file: " + filename)
                self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename))
             if (filename.split('/')[-1]).split('.')[0].lower() in to_match["words"]:
-               logger.info("Found interesting file named " + filename)
+               logger.info(f"[{self.workername}] Found interesting file named " + filename)
                self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename))      
             
             filesize = (self.conn.getAttributes(share, filename)).file_size        
             if filesize > self.options.max_size:
-                logger.info("Skipping file " + filename + ", it is too big and you said i can't handle it")
+                logger.info(f"[{self.workername}] Skipping file " + filename + ", it is too big and you said i can't handle it")
 
             else:
                 file_attributes, filesize = self.conn.retrieveFile(share, filename, file_obj)
@@ -259,7 +279,7 @@ class HW(object):
                         try:
                             os.remove(specialfile.name)
                         except Exception as e:
-                            logger.warning("Error deleting the temp file: " + specialfile.name)    
+                            logger.error(f"[{self.workername}] Error deleting the temp file: " + specialfile.name)    
 
                 else:
                     file_obj.seek(0)                
@@ -276,10 +296,10 @@ class HW(object):
                      if self.passwordHW((line.decode('utf-8')).strip('\n'), filename,to_match, line_counter, IP, share):
                           hits += 1
                           if hits >= options.hits:
-                              logger.info("Reached max hits for " + filename)
+                              logger.info(f"[{self.workername}] Reached max hits for " + filename)
                               break  
                     except Exception as e: 
-                       logger.warning("Encountered exception while reading file: " + file_ext + " | Exception: " + str(e))
+                       logger.warning(f"[{self.workername}] Encountered exception while reading file: " + file_ext + " | Exception: " + str(e))
                        if isinstance(file_obj, (io.RawIOBase, io.BufferedIOBase)): #using filetype different from none? 
                           self.options.file_extensions_black = self.options.file_extensions_black + "," + file_ext
                        break
@@ -299,24 +319,24 @@ class HW(object):
                      if p.isDirectory:   
                          
                          if p.filename.lower() in self.options.folder_black.split(','):
-                           logger.info('Skipping ' + p.filename + " since blacklisted")   
+                           logger.info(f"[{self.workername}] Skipping " + p.filename + " since blacklisted")   
 
                            continue
                          else:  
                             if parentPath.count('/') <= self.options.depth: 
                               
-                              logger.info("Visiting subfolder " + str(p.filename))  
+                              logger.info(f"[{self.workername}] Visiting subfolder " + str(p.filename))  
                               try:
                                  count = count + self.walk_path(parentPath+p.filename,shared_folder,IP,to_match)
                               except Exception as e:
-                                  logger.error("Error while accessing folder: " + parentPath+p.filename)
+                                  logger.error(f"[{self.workername}] Error while accessing folder: " + parentPath+p.filename)
                                   continue
                               #IF IT FAILS WITH A FOLDER IT SHOULD TRY TO MOVE FORWARD 
                             else:
-                               logger.info("Skipping " + str(parentPath+p.filename) + ", too deep")                              
+                               logger.info(f"[{self.workername}] Skipping " + str(parentPath+p.filename) + ", too deep")                              
                                continue  
                      else:
-                         logger.info( 'File: '+ parentPath+p.filename )
+                         logger.info(f"[{self.workername}] File: "+ parentPath+p.filename )
                          if  not p.isReadOnly:
                             
                             count+=1
@@ -326,62 +346,99 @@ class HW(object):
            
              return count               
            except Exception as e: 
-              logger.warning("Error while listing paths in shares: " + str(e))
+              logger.error(f"[{self.workername}] Error while listing paths in shares: " + str(e))
 
 
+    def createConn(self):
+        return SMBConnection(self.options.username,self.options.password,self.options.fake_hostname,'netbios-server-name',self.options.domain,use_ntlm_v2=True,is_direct_tcp=True)
                             
     
 
     def shareAnalyze(self,IPaddress, to_match):
        for ip in IPaddress:
-         logger.info("Checking SMB share on: " + ip)
-         #domain_name = 'domainname'
-         #conn = SMBConnection(options.username,options.password,options.fake_hostname,'netbios-server-name','SECRET.LOCAL',use_ntlm_v2=True,is_direct_tcp=True)
+         logger.info(f"[{self.workername}] Checking SMB share on: " + ip)
+         conn = self.createConn()
+
+         if self.options.uncpaths:
+            target = ip
+            target=target.replace("\\","/")
+            host=target.split(r"/")[2]
+            share=target.split(r"/")[3]
+            start_dir="/"+"/".join(target.split("/")[4:])
+            logger.info(f"[{self.workername}] Connecting to: {host} on share {share} with startdir {start_dir}")
+            try:
+               self.conn.connect(target, 445)  
+            except Exception as e: 
+               logger.warning(f"[{self.workername}] Detected error while connecting to " + str(target) + " with message " + str(e))
+               continue
+            self.walk_path(start_dir,share,host, to_match)
+            continue
+
          try:
             self.conn.connect(ip, 445)
          except Exception as e:
-             logger.warning("Detected error while connecting to " + str(ip) + " with message " + str(e))
+             logger.warning(f"[{self.workername}] Detected error while connecting to " + str(ip) + " with message " + str(e))
              continue  
          try:   
            shares = self.conn.listShares()
 
          except Exception as e:
-           logger.warning("Detected error while listing shares on "  + str(ip) + " with message " + str(e)) 
+           logger.warning(f"[{self.workername}] Detected error while listing shares on "  + str(ip) + " with message " + str(e)) 
            continue 
          for share in shares:
              if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$'] and share.name not in self.options.share_black.split(','):
-                logger.info('Listing file in share: ' + share.name)
+                logger.info(f"[{self.workername}] Listing file in share: " + share.name)
                 try:
-                   sharedfiles = self.conn.listPath(share.name, '/') ##THIS CHECK IS NOT ENOUGH IF IT FAILS ON A FOLDER
+                   sharedfiles = self.conn.listPath(share.name, '/') 
                 except Exception as e:  
-                    logger.warning("Detected error while listing shares on "  + str(ip) + " with message " + str(e)) 
+                    logger.warning(f"[{self.workername}] Detected error while listing shares on "  + str(ip) + " with message " + str(e)) 
                     continue
                 self.walk_path("/",share.name,ip, to_match)
          self.conn.close()   
 
+
+
     def shareAnalyzeLightning(self,to_analyze, to_match):
        
        ip = to_analyze.pop(0)
-       logger.info("Checking SMB share on: " + ip)
-       #domain_name = 'domainname'
-       #conn = SMBConnection(options.username,options.password,options.fake_hostname,'netbios-server-name','SECRET.LOCAL',use_ntlm_v2=True,is_direct_tcp=True)
-       try:
-          self.conn.connect(ip, 445)          
-          shares = self.conn.listShares()
-          for share in shares:
+       logger.info(f"[{self.workername}] Checking SMB share on: " + ip)
+       self.conn = self.createConn()
 
-            if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$'] and share.name not in self.options.share_black.split(','): 
-                   logger.info('Listing file in share: ' + share.name)
-                   self.walk_path("/",share.name,ip, to_match)
-       except Exception as e:
-           logger.info("Detected error while listing shares on "  + str(ip) + " with message " + str(e))
+       if self.options.uncpaths:
+          target = ip
+          target=target.replace("\\","/")
+          host=target.split(r"/")[2]
+          share=target.split(r"/")[3]
+          start_dir="/"+"/".join(target.split("/")[4:])
+          logger.info(f"[{self.workername}] Connecting to: {host} on share {share} with startdir {start_dir}")
+          try:
+             self.conn.connect(target, 445)  
+          except Exception as e: 
+             logger.warning(f"[{self.workername}] Detected error while connecting to " + str(target) + " with message " + str(e))
+          self.walk_path(start_dir,share,host, to_match)
+       else: 
+          try:
+             self.conn.connect(ip, 445)  
+          except Exception as e: 
+             logger.warning(f"[{self.workername}] Detected error while connecting to " + str(ip) + " with message " + str(e))   
+
+          try:              
+             shares = self.conn.listShares()
+             for share in shares:   
+
+               if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$'] and share.name not in self.options.share_black.split(','): 
+                      logger.info(f"[{self.workername}] Listing file in share: " + share.name)
+                      self.walk_path("/",share.name,ip, to_match)
+          except Exception as e:
+              logger.info(f"[{self.workername}] Detected error while listing shares on "  + str(ip) + " with message " + str(e))
             
-
+       logger.info(f"[{self.workername}] Worker finished on {ip}")
        self.conn.close()
        
-    def extractCIDR(self,final ):
+    def extractCIDR(self,final):
         cidr = []
         for target in final: 
+            print(target)
             ipcheck = re.match("^([0-9]{1,3}\.){3}[0-9]{1,3}(\/([0-9]{1,2}))$", target)
             if ipcheck: 
                 cidr.append(target)
@@ -399,48 +456,29 @@ class HW(object):
        #here it goes the LDAP check function
        if self.options.ldap:
            logger.info("Retrieving computer objects from LDAP. KINIT process might take some time, be patient")
-           #ldapoptions =self.options
-           #ldapoptions.username = self.options.domain + "\\" + self.options.username 
            ldaphelperQ = ldaphelper.LDAPHelper(self.options)
-           ldaphelperQ.kerberosAuth()
-           ldap_targets = ldaphelperQ.retrieveComputerObjects()
-           #ldap_targets = smbsrldap.run(ldapoptions)           
-           #self.options.username = (self.options.username.split('\\')[1])
+           if (self.options.ntlm):
+            ldap_targets = ldaphelperQ.retrieveComputerObjectsNTLM()
+           else:
+            ldaphelperQ.kerberosAuth()
+            ldap_targets = ldaphelperQ.retrieveComputerObjects()
+
                 
        if file_target != "unset":
          with open(file_target) as f:
            temp = [line.rstrip() for line in f]
          f.close()
-       else: 
-          temp.append(target)
-       temp = temp + ldap_targets
-
-       temp = list( dict.fromkeys(temp) )
        
-       for i in temp:        
-          try:
-            valid = re.match("^([0-9]{1,3}\.){3}[0-9]{1,3}($|\/([0-9]{1,2}))$", i) 
-          except Exception as e: 
-            logger.warning("exception reading from initial list")
-            continue        
-          if not valid:
-               logger.info("You entered an hostname, looking up " + i)
-               try:
-                 ldapt = (socket.gethostbyname(i)).strip('\n')
-                 
-                 final.append(ldapt)
+       if (target is not None):
+        temp.append(target)
 
-               except socket.gaierror: 
-                   logger.warning("Hostname could not be resolved: " + i)
-                   
-          else: 
-              final.append(i)
+       final = temp + ldap_targets
+
+
+       cidrs = self.extractCIDR(final)
+       #final = list(dict.fromkeys(final))
 
        
-       cidrs = list(dict.fromkeys(self.extractCIDR(final)))
-       final = list(dict.fromkeys(final))
-
-
        for i in cidrs:
          if i in final:            
             final.remove(i)
@@ -452,11 +490,7 @@ class HW(object):
           if len(final) == 0 and len(cidrs) > 0: #case only one input is given and it is a CIDR
             logger.error("Hey there, if you do not use masscan you can't give me CIDR as input")
             sys.exit(1)
-          for x in final:
-             ipcheck = re.match("^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$", x)
-             if not ipcheck: 
-                logger.error("Hey there, if you do not use masscan you can't give me CIDR as input")
-                sys.exit(1)
+
           return final      
        logger.info('Starting masscan to discover SMB ports open')
        mass = masscan.PortScanner()
@@ -514,23 +548,23 @@ class HW(object):
 
 
 class smbworker (threading.Thread):
-   def __init__(self, name, options, ip_list, to_match, db):
+   def __init__(self, workername, options, ip_list, to_match, db):
       threading.Thread.__init__(self)
       #self.threadID = threadID
-      self.name = name
+      self.workername = workername
       self.options = options
       self.ip = ip_list
       self.to_match = to_match
       self.db = db
    def run(self):
-      logger.info("Starting " + self.name)
-      smbHW = HW(self.options, self.db)
+      logger.info("Starting " + self.workername)
+      smbHW = HW(self.workername, self.options, self.db)
       logger.info("Tasks queue lenght: " + str(len(self.ip)))
       while (len(self.ip) > 0):
             smbHW.shareAnalyzeLightning(self.ip, self.to_match)
       
       logger.info("Tasks queue lenght: " + str(len(self.ip)))
-      logger.info("Exiting " + self.name)
+      logger.info("Exiting " + self.workername)
 
    
 
@@ -564,6 +598,7 @@ if __name__ == '__main__':
     parser.add_argument('-depth', action='store', default=100000000, type=int, help='How recursively deep you want to go while looking for secrets')
     parser.add_argument('-regular-exp', action="store", default='unset' ,type=str, help="File containing regex expression to match")
     parser.add_argument('-share-black', action='store', type=str, default='none', help='Comma separated share names to skip while secrets harvesting')
+    parser.add_argument('-uncpaths', action='store_true', default=False, help='Switch to use a UNC path as a starting point')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('-ip-list-path', action="store", default="unset", type=str, help="File containing IP to scan")
     group.add_argument('-IP',action="store", help='IP address, CIDR or hostname')
@@ -572,6 +607,7 @@ if __name__ == '__main__':
     parser.add_argument('-ldap', action='store_true', default=False, help='Query LDAP to retrieve the list of computer objects in a given domain')
     parser.add_argument('-dc-ip', action='store', help='DC IP of the domain you want to retrieve computer objects from')
     parser.add_argument('-hits', action='store',default=5000 ,type=int, help='Max findings per file')
+    parser.add_argument('-ntlm', action='store_true', default=False, help="Use NTLM authentication for LDAP auth, default is Kerberos")
    
 
     options = parser.parse_args()
@@ -608,9 +644,19 @@ if __name__ == '__main__':
     setupPersistence(db, options.dbfile)
 
     
-    smbHW = HW(options, db)
+    smbHW = HW("Worker-Lonely",options, db)
     to_match = smbHW.readMatches()
-    to_analyze = smbHW.scanNetwork()
+    if not options.uncpaths:
+        to_analyze = smbHW.scanNetwork()
+    else:
+        to_analyze = []
+        if options.ip_list_path != "unset":
+            with open(options.ip_list_path) as f: 
+                to_analyze = [line.rstrip() for line in f]
+                f.close()
+        else: 
+            to_analyze.append(options.IP)
+    
     #TO REMOVE 
     
     logger.info("Total amounts of targets: " + str(len(to_analyze)))
