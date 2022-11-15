@@ -94,6 +94,9 @@ Please also do install:
 
 * krb5
 * libkrb5-dev
+* tesseract-ocr
+* unrtf
+* antiword
 
 ## Usage
 
