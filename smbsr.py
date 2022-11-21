@@ -30,6 +30,7 @@ import sqlite3
 import csv
 from itertools import compress 
 import datetime
+from datetime import datetime
 import faulthandler
 import concurrent.futures
 import gc
@@ -62,7 +63,9 @@ class Database:
                                             tsCreated text NOT NULL,
                                             tsModified text NOT NULL, 
                                             tsAccessed text NOT NULL,
-                                            count integer NOT NULL  
+                                            tsFirstFound text NOT NULL,
+                                            tsLastFound text NOT NULL,
+                                            runTag text NOT NULL
                                         ); """
             smb_files_table = """ CREATE TABLE IF NOT EXISTS smbfile (
                                 id integer PRIMARY KEY AUTOINCREMENT,
@@ -71,7 +74,10 @@ class Database:
                                 ip text NOT NULL,
                                 tsCreated text NOT NULL,
                                 tsModified text NOT NULL,
-                                tsAccessed text NOT NULL
+                                tsAccessed text NOT NULL,
+                                tsFirstFound text NOT NULL,
+                                tsLastFound text NOT NULL,
+                                runTag text NOT NULL
 
                             ); """
             smb_write_table = """ CREATE TABLE IF NOT EXISTS smbwriterights (
@@ -90,10 +96,10 @@ class Database:
           logger.error("Encountered error while creating the database: " + str(e))
           sys.exit(1)
 
-    def exportToCSV(self):
+    def exportToCSV(self,tag):
         cursor = self.cursor
-        exportQuery = "SELECT * from smbsr"
-        exportQueryFile = "SELECT * from smbfile"
+        exportQuery = "SELECT * from smbsr WHERE runTag = '{tag}\'".format(tag=tag)
+        exportQueryFile = "SELECT * from smbfile WHERE runTag = '{tag}\'".format(tag=tag)
         exportWritableQuery = "SELECT * from smbwriterights"
         sr = cursor.execute(exportQuery)
         with open('smbsr_results.csv', 'w') as f:
@@ -120,32 +126,50 @@ class Database:
         except Exception as e:
             logger.info(e)
 
-    def insertFinding(self, filename, share, ip, line, matched_with ,times):
-         
+    def insertFinding(self, filename, share, ip, line, matched_with ,times, tag):
+         now = datetime.now()
+         date = now.strftime("%d-%m-%Y")
          try: 
            self.lock.acquire(True) 
            cursor = self.cursor
            checkQuery = 'SELECT id FROM smbsr WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\''.format(ip=ip, share=share, filename=filename)
            results = cursor.execute(checkQuery).fetchall()
+           
            if len(results) == 0:
-               insertFindingQuery = "INSERT INTO smbsr (file, share, ip, position, matchedWith, tsCreated, tsModified, tsAccessed, count) VALUES (?,?,?,?,?,?,?,?,?)"
-               cursor.execute(insertFindingQuery, (filename, share, ip, line, matched_with, times[0], times[1], times[2], 1))
+               insertFindingQuery = "INSERT INTO smbsr (file, share, ip, position, matchedWith, tsCreated, tsModified, tsAccessed, tsFirstFound, tsLastFound, runTag) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
+               cursor.execute(insertFindingQuery, (filename, share, ip, line, matched_with, times[0], times[1], times[2], date, date, tag))
                self.commit()
            else: 
-                updateQuery = 'UPDATE smbsr SET count = count + 1 WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\''.format(ip=ip, share=share, filename=filename)
+                updateQuery = 'UPDATE smbsr SET tsLastFound = \'{date}\' WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\''.format(date=date, ip=ip, share=share, filename=filename)
                 cursor.execute(updateQuery)
                 self.commit()  
+         except Exception as e:
+            logger.error("Error while updating database: " + str(e))
+            self.lock.release()        
          finally: 
            self.lock.release()  
 
-    def insertFileFinding(self, filename, share, ip, times):
-         
+    def insertFileFinding(self, filename, share, ip, times, tag):
+         now = datetime.now()
+         date = now.strftime("%d-%m-%Y")
          try: 
-           self.lock.acquire(True)         
+           self.lock.acquire(True)   
            cursor = self.cursor
-           insertFindingQuery = "INSERT INTO smbfile (file, share, ip, tsCreated, tsModified, tsAccessed) VALUES (?,?,?,?,?,?)"
-           cursor.execute(insertFindingQuery, (filename, share, ip, times[0], times[1], times[2]))
-           self.commit()  
+           checkQuery = 'SELECT id FROM smbfile WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\''.format(ip=ip, share=share, filename=filename)
+           results = cursor.execute(checkQuery).fetchall()
+           
+           if len(results) == 0:           
+               insertFindingQuery = "INSERT INTO smbfile (file, share, ip, tsCreated, tsModified, tsAccessed, tsFirstFound, tsLastFound, runTag) VALUES (?,?,?,?,?,?,?,?,?)"
+               cursor.execute(insertFindingQuery, (filename, share, ip, times[0], times[1], times[2], date, date, tag))               
+               self.commit()
+           else: 
+               
+               updateQuery = 'UPDATE smbfile SET tsLastFound = \'{date}\' WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\''.format(date=date, ip=ip, share=share, filename=filename)
+               cursor.execute(updateQuery)
+               self.commit()     
+         except Exception as e:
+           logger.error("Error while updating database: " + str(e))
+           self.lock.release()   
          finally: 
             self.lock.release()
 
@@ -208,15 +232,19 @@ class HW(object):
                print("Invalid input please enter [y/n]")
 
     def retrieveTimes(self, share, filename):
-        times = []
-        attributes = self.conn.getAttributes(share, filename)
-        ts_created = datetime.datetime.fromtimestamp(attributes.create_time).strftime('%Y-%m-%d %H:%M:%S')
-        ts_accessed = datetime.datetime.fromtimestamp(attributes.last_access_time).strftime('%Y-%m-%d %H:%M:%S')
-        ts_modified = datetime.datetime.fromtimestamp(attributes.last_write_time).strftime('%Y-%m-%d %H:%M:%S')
-        times.append(ts_created)
-        times.append(ts_modified)
-        times.append(ts_accessed)
-        return times 
+        try: 
+           times = []
+           attributes = self.conn.getAttributes(share, filename)
+           ts_created = datetime.fromtimestamp(attributes.create_time).strftime('%Y-%m-%d %H:%M:%S')
+           ts_accessed = datetime.fromtimestamp(attributes.last_access_time).strftime('%Y-%m-%d %H:%M:%S')
+           ts_modified = datetime.fromtimestamp(attributes.last_write_time).strftime('%Y-%m-%d %H:%M:%S')
+           times.append(ts_created)
+           times.append(ts_modified)
+           times.append(ts_accessed)
+           return times
+        except Exception as e: 
+           logger.error("Error while retrieving timestamp of file: " + filename + "with exception: " + str(e))
+
 
     def passwordHW(self,text, filename,to_match, counter, IP, share):
         results = []
@@ -232,7 +260,7 @@ class HW(object):
             m = [i for i, x in enumerate(results) if x]
             for z in m:
                 logger.info(f"[{self.workername}] Found interesting match in " + filename + " with " + words[z] +", line: " + str(counter)) 
-                self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename))
+                self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename), self.options.tag)
                 return True    
         if len(regex) > 0:
 
@@ -256,10 +284,10 @@ class HW(object):
         else:
             if file_ext.lower() in self.options.file_interesting.split(','):
                logger.info(f"[{self.workername}] Found interesting file: " + filename)
-               self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename))
+               self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename), self.options.tag)
             if (filename.split('/')[-1]).split('.')[0].lower() in to_match["words"]:
                logger.info(f"[{self.workername}] Found interesting file named " + filename)
-               self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename))      
+               self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename), self.options.tag)      
             
             filesize = (self.conn.getAttributes(share, filename)).file_size        
             if filesize > self.options.max_size:
@@ -609,7 +637,7 @@ if __name__ == '__main__':
     parser.add_argument('-dc-ip', action='store', help='DC IP of the domain you want to retrieve computer objects from')
     parser.add_argument('-hits', action='store',default=5000 ,type=int, help='Max findings per file')
     parser.add_argument('-ntlm', action='store_true', default=False, help="Use NTLM authentication for LDAP auth, default is Kerberos")
-   
+    parser.add_argument('-tag', action='store',default="NOLABEL" ,type=str, help='Label the run')
 
     options = parser.parse_args()
 
@@ -617,7 +645,10 @@ if __name__ == '__main__':
         parser.error ('If you want to retrieve computer objects from LDAP please provide a FQDN to retrieve your TGT')
     faulthandler.enable()
     formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
-
+    if options.tag == "NOLABEL":
+        now = datetime.now()
+        date = now.strftime("%d-%m-%Y")
+        options.tag = "RUN-" + date
     logger = logging.getLogger('logger')
     #cleaning handlers 
     logging.getLogger().handlers = []
@@ -684,7 +715,7 @@ if __name__ == '__main__':
     else:     
         smbHW.shareAnalyze(to_analyze, to_match)
     if options.csv:
-       db.exportToCSV()
+       db.exportToCSV(options.tag)
     print ("Hope you found something good mate!")
     
 
