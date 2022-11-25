@@ -65,7 +65,8 @@ class Database:
                                             tsAccessed text NOT NULL,
                                             tsFirstFound text NOT NULL,
                                             tsLastFound text NOT NULL,
-                                            runTag text NOT NULL
+                                            runTag text NOT NULL,
+                                            extract text NOT NULL
                                         ); """
             smb_files_table = """ CREATE TABLE IF NOT EXISTS smbfile (
                                 id integer PRIMARY KEY AUTOINCREMENT,
@@ -126,23 +127,32 @@ class Database:
         except Exception as e:
             logger.info(e)
 
-    def insertFinding(self, filename, share, ip, line, matched_with ,times, tag):
+    def insertFinding(self, filename, share, ip, line, matchedwith ,times, tag, text):
          now = datetime.now()
          date = now.strftime("%d-%m-%Y")
          try: 
            self.lock.acquire(True) 
            cursor = self.cursor
-           checkQuery = 'SELECT id FROM smbsr WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\''.format(ip=ip, share=share, filename=filename)
+           checkQuery = 'SELECT id, extract FROM smbsr WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\' AND matchedWith=\'{matchedwith}\' AND position=\'{line}\''.format(ip=ip, share=share, filename=filename, matchedwith=matchedwith, line=line)
            results = cursor.execute(checkQuery).fetchall()
            
            if len(results) == 0:
-               insertFindingQuery = "INSERT INTO smbsr (file, share, ip, position, matchedWith, tsCreated, tsModified, tsAccessed, tsFirstFound, tsLastFound, runTag) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
-               cursor.execute(insertFindingQuery, (filename, share, ip, line, matched_with, times[0], times[1], times[2], date, date, tag))
+               insertFindingQuery = "INSERT INTO smbsr (file, share, ip, position, matchedWith, tsCreated, tsModified, tsAccessed, tsFirstFound, tsLastFound, runTag, extract) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+               cursor.execute(insertFindingQuery, (filename, share, ip, line, matchedwith, times[0], times[1], times[2], date, date, tag, text))
                self.commit()
            else: 
-                updateQuery = 'UPDATE smbsr SET tsLastFound = \'{date}\' WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\''.format(date=date, ip=ip, share=share, filename=filename)
+                textOld = ((results[0])[1])
+                updateQuery = 'UPDATE smbsr SET tsLastFound = \'{date}\' WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\' AND matchedWith=\'{matchedwith}\' AND position=\'{line}\' AND extract=\'{text}\''.format(date=date, ip=ip, share=share, filename=filename, matchedwith=matchedwith, line=line, text=text)
                 cursor.execute(updateQuery)
-                self.commit()  
+                self.commit() 
+                if textOld != text:
+                   updateQuery = 'UPDATE smbsr SET extract = \'{text}\' WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\' AND matchedWith=\'{matchedwith}\' AND position=\'{line}\''.format(text=text, ip=ip, share=share, filename=filename, matchedwith=matchedwith, line=line)
+                   aa = cursor.execute(updateQuery)
+                   print(aa)
+                   self.commit()
+                   updateQuery = 'UPDATE smbsr SET runTag = \'{tag}\' WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\' AND matchedWith=\'{matchedwith}\' AND position=\'{line}\' AND extract=\'{text}\''.format(tag=tag, text=text, ip=ip, share=share, filename=filename, matchedwith=matchedwith, line=line)
+                   cursor.execute(updateQuery)
+                   self.commit()    
          except Exception as e:
             logger.error("Error while updating database: " + str(e))
             self.lock.release()        
@@ -249,7 +259,10 @@ class HW(object):
     def passwordHW(self,text, filename,to_match, counter, IP, share):
         results = []
         output = False
-        
+        lbound = 0 
+        ubound = 0
+        tosave = ""
+        substartidx = 0 
         words =to_match["words"]
         regex = to_match["regex"]
         
@@ -260,14 +273,29 @@ class HW(object):
             m = [i for i, x in enumerate(results) if x]
             for z in m:
                 logger.info(f"[{self.workername}] Found interesting match in " + filename + " with " + words[z] +", line: " + str(counter)) 
-                self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename), self.options.tag)
+                substartidx = (text.lower()).find(words[z].lower())
+                logger.info("Printing only the substring: " + text[substartidx:(substartidx+len(words[z]))])
+                if len(text) < 50: 
+                    tosave = text
+                else: 
+                    if substartidx < 25: 
+                        lbound = 0 
+                    else: 
+                        lbound = substartidx - 25
+                    if (len(text) - (substartidx+len(words[z]))) < 25:
+                        ubound = (len(text) - (substartidx+len(words[z])))
+                    else:
+                        ubound = (substartidx+len(words[z]) + 25)
+                       
+                    tosave = text[lbound:ubound]             
+
+                self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename), self.options.tag, tosave)
                 return True    
         if len(regex) > 0:
-
             for i in regex:        
                 if re.search(i, text):
                     logger.info(f"[{self.workername}] Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
-                    self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename))
+                    self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename), self.options.tag, tosave)
                     return True
         return False              
 
@@ -299,7 +327,6 @@ class HW(object):
                 if file_ext.lower() in ['docx','doc','docx','eml','epub','gif','jpg','mp3','msg','odt','ogg','pdf','png','pptx','ps','rtf','tiff','tif','wav','xlsx','xls']:
                     specialfile = open(str(''.join(random.choices(string.ascii_uppercase, k = 5))) + "." +file_ext , "ab")
                     file_attributes, filesize = self.conn.retrieveFile(share, filename, specialfile)
-                    #this mightbe empty AND GENERATE AND EXCEPTION
                     lines = (self.retrieveTextSpecial(specialfile))
                     specialfile.close()
                     if lines != "textractfailed":
@@ -395,7 +422,7 @@ class HW(object):
             start_dir="/"+"/".join(target.split("/")[4:])
             logger.info(f"[{self.workername}] Connecting to: {host} on share {share} with startdir {start_dir}")
             try:
-               self.conn.connect(target, 445)  
+               self.conn.connect(host, 445)  
             except Exception as e: 
                logger.warning(f"[{self.workername}] Detected error while connecting to " + str(target) + " with message " + str(e))
                continue
@@ -440,7 +467,7 @@ class HW(object):
           start_dir="/"+"/".join(target.split("/")[4:])
           logger.info(f"[{self.workername}] Connecting to: {host} on share {share} with startdir {start_dir}")
           try:
-             self.conn.connect(target, 445)
+             self.conn.connect(host, 445)
              self.walk_path(start_dir,share,host, to_match)  
           except Exception as e: 
              logger.warning(f"[{self.workername}] Detected error while connecting to " + str(target) + " with message " + str(e))
@@ -648,7 +675,7 @@ if __name__ == '__main__':
     if options.tag == "NOLABEL":
         now = datetime.now()
         date = now.strftime("%d-%m-%Y")
-        options.tag = "RUN-" + date
+        options.tag = "RUN-" + date + "-" + ''.join((random.choice(string.ascii_lowercase) for x in range(8)))
     logger = logging.getLogger('logger')
     #cleaning handlers 
     logging.getLogger().handlers = []
@@ -717,6 +744,7 @@ if __name__ == '__main__':
     if options.csv:
        db.exportToCSV(options.tag)
     print ("Hope you found something good mate!")
+    print ("The tag for this run is: " + options.tag)
     
 
 
