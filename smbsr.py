@@ -125,7 +125,7 @@ class Database:
         try:
             self.cursor.execute(create_table_sql)
         except Exception as e:
-            logger.info(e)
+            logger.error(e)
 
     def insertFinding(self, filename, share, ip, line, matchedwith ,times, tag, text):
          now = datetime.now()
@@ -272,9 +272,8 @@ class HW(object):
         if output: 
             m = [i for i, x in enumerate(results) if x]
             for z in m:
-                logger.info(f"[{self.workername}] Found interesting match in " + filename + " with " + words[z] +", line: " + str(counter)) 
+                logger.debug(f"[{self.workername}] Found interesting match in " + filename + " with " + words[z] +", line: " + str(counter)) 
                 substartidx = (text.lower()).find(words[z].lower())
-                logger.info("Printing only the substring: " + text[substartidx:(substartidx+len(words[z]))])
                 if len(text) < 50: 
                     tosave = text
                 else: 
@@ -294,7 +293,7 @@ class HW(object):
         if len(regex) > 0:
             for i in regex:        
                 if re.search(i, text):
-                    logger.info(f"[{self.workername}] Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
+                    logger.debug(f"[{self.workername}] Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
                     self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename), self.options.tag, tosave)
                     return True
         return False              
@@ -308,18 +307,18 @@ class HW(object):
         #file_ext_double = (filename.split('/')[-1]).split('.')[-2] or "empty"
         # or file_ext_double.lower() in self.options.file_extensions_black.split(',')
         if file_ext.lower() in self.options.file_extensions_black.split(','):
-            logger.info(f"[{self.workername}] This extensions is blacklisted")
+            logger.debug(f"[{self.workername}] This extensions is blacklisted")
         else:
             if file_ext.lower() in self.options.file_interesting.split(','):
-               logger.info(f"[{self.workername}] Found interesting file: " + filename)
+               logger.debug(f"[{self.workername}] Found interesting file: " + filename)
                self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename), self.options.tag)
             if (filename.split('/')[-1]).split('.')[0].lower() in to_match["words"]:
-               logger.info(f"[{self.workername}] Found interesting file named " + filename)
+               logger.debug(f"[{self.workername}] Found interesting file named " + filename)
                self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename), self.options.tag)      
             
             filesize = (self.conn.getAttributes(share, filename)).file_size        
             if filesize > self.options.max_size:
-                logger.info(f"[{self.workername}] Skipping file " + filename + ", it is too big and you said i can't handle it")
+                logger.debug(f"[{self.workername}] Skipping file " + filename + ", it is too big and you said i can't handle it")
 
             else:
                 file_attributes, filesize = self.conn.retrieveFile(share, filename, file_obj)
@@ -351,10 +350,10 @@ class HW(object):
                      if self.passwordHW((line.decode('utf-8')).strip('\n'), filename,to_match, line_counter, IP, share):
                           hits += 1
                           if hits >= options.hits:
-                              logger.info(f"[{self.workername}] Reached max hits for " + filename)
+                              logger.debug(f"[{self.workername}] Reached max hits for " + filename)
                               break  
                     except Exception as e: 
-                       logger.warning(f"[{self.workername}] Encountered exception while reading file: " + file_ext + " | Exception: " + str(e))
+                       logger.error(f"[{self.workername}] Encountered exception while reading file: " + file_ext + " | Exception: " + str(e))
                        if isinstance(file_obj, (io.RawIOBase, io.BufferedIOBase)): #using filetype different from none? 
                           self.options.file_extensions_black = self.options.file_extensions_black + "," + file_ext
                        break
@@ -374,13 +373,13 @@ class HW(object):
                      if p.isDirectory:   
                          
                          if p.filename.lower() in self.options.folder_black.split(','):
-                           logger.info(f"[{self.workername}] Skipping " + p.filename + " since blacklisted")   
+                           logger.debug(f"[{self.workername}] Skipping " + p.filename + " since blacklisted")   
 
                            continue
                          else:  
                             if parentPath.count('/') <= self.options.depth: 
                               
-                              logger.info(f"[{self.workername}] Visiting subfolder " + str(p.filename))  
+                              logger.debug(f"[{self.workername}] Visiting subfolder " + str(p.filename))  
                               try:
                                  count = count + self.walk_path(parentPath+p.filename,shared_folder,IP,to_match)
                               except Exception as e:
@@ -388,10 +387,10 @@ class HW(object):
                                   continue
                               #IF IT FAILS WITH A FOLDER IT SHOULD TRY TO MOVE FORWARD 
                             else:
-                               logger.info(f"[{self.workername}] Skipping " + str(parentPath+p.filename) + ", too deep")                              
+                               logger.debug(f"[{self.workername}] Skipping " + str(parentPath+p.filename) + ", too deep")                              
                                continue  
                      else:
-                         logger.info(f"[{self.workername}] File: "+ parentPath+p.filename )
+                         logger.debug(f"[{self.workername}] File: "+ parentPath+p.filename )
                          if  not p.isReadOnly:
                             
                             count+=1
@@ -420,11 +419,11 @@ class HW(object):
             host=target.split(r"/")[2]
             share=target.split(r"/")[3]
             start_dir="/"+"/".join(target.split("/")[4:])
-            logger.info(f"[{self.workername}] Connecting to: {host} on share {share} with startdir {start_dir}")
+            logger.debug(f"[{self.workername}] Connecting to: {host} on share {share} with startdir {start_dir}")
             try:
                self.conn.connect(host, 445)  
             except Exception as e: 
-               logger.warning(f"[{self.workername}] Detected error while connecting to " + str(target) + " with message " + str(e))
+               logger.error(f"[{self.workername}] Detected error while connecting to " + str(target) + " with message " + str(e))
                continue
             self.walk_path(start_dir,share,host, to_match)
             continue
@@ -432,21 +431,21 @@ class HW(object):
          try:
             self.conn.connect(ip, 445)
          except Exception as e:
-             logger.warning(f"[{self.workername}] Detected error while connecting to " + str(ip) + " with message " + str(e))
+             logger.error(f"[{self.workername}] Detected error while connecting to " + str(ip) + " with message " + str(e))
              continue  
          try:   
            shares = self.conn.listShares()
 
          except Exception as e:
-           logger.warning(f"[{self.workername}] Detected error while listing shares on "  + str(ip) + " with message " + str(e)) 
+           logger.error(f"[{self.workername}] Detected error while listing shares on "  + str(ip) + " with message " + str(e)) 
            continue 
          for share in shares:
              if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$'] and share.name not in self.options.share_black.split(','):
-                logger.info(f"[{self.workername}] Listing file in share: " + share.name)
+                logger.debug(f"[{self.workername}] Listing file in share: " + share.name)
                 try:
                    sharedfiles = self.conn.listPath(share.name, '/') 
                 except Exception as e:  
-                    logger.warning(f"[{self.workername}] Detected error while listing shares on "  + str(ip) + " with message " + str(e)) 
+                    logger.error(f"[{self.workername}] Detected error while listing shares on "  + str(ip) + " with message " + str(e)) 
                     continue
                 self.walk_path("/",share.name,ip, to_match)
          self.conn.close()   
@@ -465,28 +464,28 @@ class HW(object):
           host=target.split(r"/")[2]
           share=target.split(r"/")[3]
           start_dir="/"+"/".join(target.split("/")[4:])
-          logger.info(f"[{self.workername}] Connecting to: {host} on share {share} with startdir {start_dir}")
+          logger.debug(f"[{self.workername}] Connecting to: {host} on share {share} with startdir {start_dir}")
           try:
              self.conn.connect(host, 445)
              self.walk_path(start_dir,share,host, to_match)  
           except Exception as e: 
-             logger.warning(f"[{self.workername}] Detected error while connecting to " + str(target) + " with message " + str(e))
+             logger.error(f"[{self.workername}] Detected error while connecting to " + str(target) + " with message " + str(e))
           
        else: 
           try:
              self.conn.connect(ip, 445)  
           except Exception as e: 
-             logger.warning(f"[{self.workername}] Detected error while connecting to " + str(ip) + " with message " + str(e))   
+             logger.error(f"[{self.workername}] Detected error while connecting to " + str(ip) + " with message " + str(e))   
 
           try:              
              shares = self.conn.listShares()
              for share in shares:   
 
                if not share.isSpecial and share.name not in ['NETLOGON', 'IPC$'] and share.name not in self.options.share_black.split(','): 
-                      logger.info(f"[{self.workername}] Listing file in share: " + share.name)
+                      logger.debug(f"[{self.workername}] Listing file in share: " + share.name)
                       self.walk_path("/",share.name,ip, to_match)
           except Exception as e:
-              logger.info(f"[{self.workername}] Detected error while listing shares on "  + str(ip) + " with message " + str(e))
+              logger.error(f"[{self.workername}] Detected error while listing shares on "  + str(ip) + " with message " + str(e))
             
        logger.info(f"[{self.workername}] Worker finished on {ip}")
        self.conn.close()
@@ -494,7 +493,7 @@ class HW(object):
     def extractCIDR(self,final):
         cidr = []
         for target in final: 
-            print(target)
+            
             ipcheck = re.match("^([0-9]{1,3}\.){3}[0-9]{1,3}(\/([0-9]{1,2}))$", target)
             if ipcheck: 
                 cidr.append(target)
@@ -665,6 +664,7 @@ if __name__ == '__main__':
     parser.add_argument('-hits', action='store',default=5000 ,type=int, help='Max findings per file')
     parser.add_argument('-ntlm', action='store_true', default=False, help="Use NTLM authentication for LDAP auth, default is Kerberos")
     parser.add_argument('-tag', action='store',default="NOLABEL" ,type=str, help='Label the run')
+    parser.add_argument('-debug', action='store_true',default=False ,type=str, help='Verbose logging enabled')
 
     options = parser.parse_args()
 
@@ -683,7 +683,11 @@ if __name__ == '__main__':
     logger.setLevel(logging.INFO)
 
     infoHandler = logging.FileHandler(options.logfile)
-    infoHandler.setLevel(logging.INFO)
+    if options.debug:
+        infoHandler.setLevel(logging.DEBUG)
+    else:    
+        infoHandler.setLevel(logging.INFO)
+
     infoHandler.setFormatter(formatter)
     
     stdoutHandler = logging.StreamHandler(sys.stdout)
