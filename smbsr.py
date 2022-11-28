@@ -142,7 +142,7 @@ class Database:
                self.commit()
            else: 
                 textOld = ((results[0])[1])
-                updateQuery = 'UPDATE smbsr SET tsLastFound = \'{date}\' WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\' AND matchedWith=\'{matchedwith}\' AND position=\'{line}\' AND extract=\'{text}\''.format(date=date, ip=ip, share=share, filename=filename, matchedwith=matchedwith, line=line, text=text)
+                updateQuery = 'UPDATE smbsr SET tsLastFound = \'{date}\' WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\' AND matchedWith=\'{matchedwith}\' AND position=\'{line}\''.format(date=date, ip=ip, share=share, filename=filename, matchedwith=matchedwith, line=line)
                 cursor.execute(updateQuery)
                 self.commit() 
                 if textOld != text:
@@ -288,7 +288,7 @@ class HW(object):
                        
                     tosave = text[lbound:ubound]             
 
-                self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename), self.options.tag, tosave)
+                self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename), self.options.tag, tosave.strip('\n'))
                 return True    
         if len(regex) > 0:
             for i in regex:        
