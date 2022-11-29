@@ -293,8 +293,23 @@ class HW(object):
         if len(regex) > 0:
             for i in regex:        
                 if re.search(i, text):
+                    matched = (re.search(i, text)).group(0)
                     logger.debug(f"[{self.workername}] Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
-                    self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename), self.options.tag, tosave)
+                    substartidx = (text.lower()).find(matched.lower())
+                    if len(text) < 50: 
+                        tosave = text
+                    else: 
+                        if substartidx < 25: 
+                            lbound = 0 
+                        else: 
+                            lbound = substartidx - 25
+                        if (len(text) - (substartidx+len(matched))) < 25:
+                            ubound = (len(text) - (substartidx+len(matched)))
+                        else:
+                            ubound = (substartidx+len(matched) + 25)
+                           
+                        tosave = text[lbound:ubound]                       
+                    self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename), self.options.tag, tosave.strip('\n'))
                     return True
         return False              
 
