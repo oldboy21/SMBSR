@@ -7,15 +7,15 @@ def checkChar(x,counter):
 	upper = set(string.ascii_uppercase)
 	
 	if x.isspace():
-		return "(?=^.{" + str(counter) + "}[\s])"
+		return "(?=.{" + str(counter) + "}[\s])"
 	elif x.isalnum() is False:
-		return "(?=^.{" + str(counter) + """}[!@#&_()–\[\{\}\]:;'%,?\/\*~\$\^\+="<>])""" 
+		return "(?=.{" + str(counter) + """}[!@#&_()–\[\{\}\]:;'%,?\/\*~\$\^\+="<>])""" 
 	elif x in lower:
-		return "(?=^.{" + str(counter) + "}[a-z])"
+		return "(?=.{" + str(counter) + "}[a-z])"
 	elif x in upper: 
-		return "(?=^.{" + str(counter) + "}[A-Z])"
+		return "(?=.{" + str(counter) + "}[A-Z])"
 	else: 
-		return "(?=^.{" + str(counter) + "}[\d])"
+		return "(?=.{" + str(counter) + "}[\d])"
 
 
 filepath = input("Wordlist path, please: ")
