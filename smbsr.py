@@ -679,7 +679,7 @@ if __name__ == '__main__':
     parser.add_argument('-hits', action='store',default=5000 ,type=int, help='Max findings per file')
     parser.add_argument('-ntlm', action='store_true', default=False, help="Use NTLM authentication for LDAP auth, default is Kerberos")
     parser.add_argument('-tag', action='store',default="NOLABEL" ,type=str, help='Label the run')
-    parser.add_argument('-debug', action='store_true',default=False ,type=str, help='Verbose logging enabled')
+    parser.add_argument('-debug', action='store_true',default=False, help='Verbose logging enabled')
 
     options = parser.parse_args()
 
@@ -695,18 +695,23 @@ if __name__ == '__main__':
     #cleaning handlers 
     logging.getLogger().handlers = []
     logger.handlers = []
-    logger.setLevel(logging.INFO)
+    #logger.setLevel(logging.INFO)
 
     infoHandler = logging.FileHandler(options.logfile)
-    if options.debug:
-        infoHandler.setLevel(logging.DEBUG)
+    if options.debug is True:
+        print ("Log Level: DEBUG")
+        debugHandler = logging.FileHandler(options.logfile)
+        debugHandler.setLevel(logging.DEBUG)
+        debugHandler.setFormatter(formatter)
+        logging.getLogger().addHandler(debugHandler)
+        logger.setLevel(logging.DEBUG)
     else:    
         infoHandler.setLevel(logging.INFO)
+        logger.setLevel(logging.INFO)
 
     infoHandler.setFormatter(formatter)
     
     stdoutHandler = logging.StreamHandler(sys.stdout)
-    stdoutHandler.setLevel(logging.INFO)
     stdoutHandler.setFormatter(formatter)
 
     logger.addHandler(stdoutHandler)
