@@ -288,7 +288,7 @@ class HW(object):
                        
                     tosave = text[lbound:ubound]             
 
-                self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename), self.options.tag, tosave.strip('\n'))
+                self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename), self.options.tag, tosave.replace("\n", " "))
                 return True    
         if len(regex) > 0:
             for i in regex:        
@@ -309,7 +309,7 @@ class HW(object):
                             ubound = (substartidx+len(matched) + 25)
                            
                         tosave = text[lbound:ubound]                       
-                    self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename), self.options.tag, tosave.strip('\n'))
+                    self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename), self.options.tag, tosave.replace("\n", " "))
                     return True
         return False              
 
