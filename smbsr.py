@@ -295,8 +295,6 @@ class HW(object):
                 matchedraw = re.search(i, text)     
                 if matchedraw:
                     matched = (matchedraw).group(0)
-                    print (matchedraw)
-                    print (matched)
                     logger.debug(f"[{self.workername}] Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
                     substartidx = (text.lower()).find(matched.lower())
                     if len(text) < 50: 
