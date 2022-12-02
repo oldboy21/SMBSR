@@ -291,9 +291,12 @@ class HW(object):
                 self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename), self.options.tag, tosave.replace("\n", " "))
                 return True    
         if len(regex) > 0:
-            for i in regex:        
-                if re.search(i, text):
-                    matched = (re.search(i, text)).group(0)
+            for i in regex:
+                matchedraw = re.search(i, text)     
+                if matchedraw:
+                    matched = (matchedraw).group(0)
+                    print (matchedraw)
+                    print (matched)
                     logger.debug(f"[{self.workername}] Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
                     substartidx = (text.lower()).find(matched.lower())
                     if len(text) < 50: 
