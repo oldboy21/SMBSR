@@ -7,3 +7,5 @@ data*/
 *.csv
 variables.sh
 hosts.txt
+regexp.txt
+unc
