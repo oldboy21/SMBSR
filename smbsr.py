@@ -257,62 +257,73 @@ class HW(object):
 
 
     def passwordHW(self,text, filename,to_match, counter, IP, share):
-        results = []
-        output = False
-        lbound = 0 
-        ubound = 0
-        tosave = ""
-        substartidx = 0 
-        words =to_match["words"]
-        regex = to_match["regex"]
-        
-        for substring in words: 
-            results.append(substring.lower() in text.lower())
-        output=any(results)        
-        if output: 
-            m = [i for i, x in enumerate(results) if x]
-            for z in m:
-                logger.debug(f"[{self.workername}] Found interesting match in " + filename + " with " + words[z] +", line: " + str(counter)) 
-                substartidx = (text.lower()).find(words[z].lower())
-                if len(text) < 50: 
-                    tosave = text
-                else: 
-                    if substartidx < 25: 
-                        lbound = 0 
-                    else: 
-                        lbound = substartidx - 25
-                    if (len(text) - (substartidx+len(words[z]))) < 25:
-                        ubound = (len(text) - (substartidx+len(words[z])))
-                    else:
-                        ubound = (substartidx+len(words[z]) + 25)
-                       
-                    tosave = text[lbound:ubound]             
-
-                self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename), self.options.tag, tosave.replace("\n", " "))
-                return True    
-        if len(regex) > 0:
-            for i in regex:
-                matchedraw = re.search(i, text)     
-                if matchedraw:
-                    matched = (matchedraw).group(0)
-                    logger.debug(f"[{self.workername}] Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
-                    substartidx = (text.lower()).find(matched.lower())
-                    if len(text) < 50: 
-                        tosave = text
-                    else: 
-                        if substartidx < 25: 
-                            lbound = 0 
+        try:
+            if text == "" or text is None:
+                return False
+            logger.debug(f"[{self.workername}] Searching for secrets in text: "+text)
+            results = []
+            output = False
+            lbound = 0 
+            ubound = 0
+            tosave = ""
+            substartidx = 0 
+            words =to_match["words"]
+            regex = to_match["regex"]
+            for substring in words: 
+                results.append(substring.lower() in text.lower())
+            output=any(results)        
+            if output: 
+                try:
+                    m = [i for i, x in enumerate(results) if x]
+                    for z in m:
+                        logger.info(f"[{self.workername}] Found interesting match in " + filename + " with " + words[z] +", line: " + str(counter)) 
+                        substartidx = (text.lower()).find(words[z].lower())
+                        if len(text) < 50: 
+                            tosave = text
                         else: 
-                            lbound = substartidx - 25
-                        if (len(text) - (substartidx+len(matched))) < 25:
-                            ubound = (len(text) - (substartidx+len(matched)))
-                        else:
-                            ubound = (substartidx+len(matched) + 25)
-                           
-                        tosave = text[lbound:ubound]                       
-                    self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename), self.options.tag, tosave.replace("\n", " "))
-                    return True
-        return False              
+                            if substartidx < 25: 
+                                lbound = 0 
+                            else: 
+                                lbound = substartidx - 25
+                            if (len(text) - (substartidx+len(words[z]))) < 25:
+                                ubound = (len(text) - (substartidx+len(words[z])))
+                            else:
+                                ubound = (substartidx+len(words[z]) + 25)
+                            
+                            tosave = text[lbound:ubound]             
+
+                        self.db.insertFinding(filename, share, IP, str(counter), words[z], self.retrieveTimes(share,filename), self.options.tag, tosave.replace("\n", " "))
+                        return True
+                except Exception as e:
+                    logger.debug(f"[{self.workername}] Error while looking for strings to match")
+            if len(regex) > 0:
+                for i in regex:
+                    try:
+                        matchedraw = re.search(i, text)     
+                        if matchedraw:
+                            matched = (matchedraw).group(0)
+                            logger.info(f"[{self.workername}] Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
+                            substartidx = (text.lower()).find(matched.lower())
+                            if len(text) < 50: 
+                                tosave = text
+                            else: 
+                                if substartidx < 25: 
+                                    lbound = 0 
+                                else: 
+                                    lbound = substartidx - 25
+                                if (len(text) - (substartidx+len(matched))) < 25:
+                                    ubound = (len(text) - (substartidx+len(matched)))
+                                else:
+                                    ubound = (substartidx+len(matched) + 25)
+                                
+                                tosave = text[lbound:ubound]                       
+                            self.db.insertFinding(filename, share, IP, str(counter), i, self.retrieveTimes(share,filename), self.options.tag, tosave.replace("\n", " "))
+                            return True
+                    except Exception as e:
+                        logger.debug(f"[{self.workername}] Error while looking for regexp: "+str(i))
+            return False      
+        except Exception as e:
+            logger.debug(f"[{self.workername}] Error while parsing line of file: "+str(e))
 
 
     def parse(self, share, filename, to_match, IP):
@@ -356,14 +367,12 @@ class HW(object):
                     lines = file_obj.readlines()
                     #need to work on the lines here bcs the strip with bytes does not work apparently 
                     
-
                 if len(lines) > 0 and lines != "textractfailed": 
                   for line in lines: 
-                    
                     line_counter+=1 
                     try: 
                         
-                     if self.passwordHW((line.decode('utf-8')).strip('\n'), filename,to_match, line_counter, IP, share):
+                     if self.passwordHW(line.decode('utf-8').rstrip(), filename,to_match, line_counter, IP, share):
                           hits += 1
                           if hits >= options.hits:
                               logger.debug(f"[{self.workername}] Reached max hits for " + filename)
@@ -416,7 +425,7 @@ class HW(object):
            
              return count               
            except Exception as e: 
-              logger.error(f"[{self.workername}] Error while listing paths in shares: " + str(e))
+              logger.error(f"[{self.workername}] Error while listing path: "+path+" in share: "+shared_folder)
 
 
     def createConn(self):
@@ -554,9 +563,6 @@ class HW(object):
          if i in final:            
             final.remove(i)
 
-
-
-
        if not self.options.masscan:
           if len(final) == 0 and len(cidrs) > 0: #case only one input is given and it is a CIDR
             logger.error("Hey there, if you do not use masscan you can't give me CIDR as input")
@@ -592,15 +598,18 @@ class HW(object):
     def readMatches(self):
         filepath = self.options.word_list_path
         file_regular = self.options.regular_exp
+        lines = []
+        if filepath != 'unset':
+            try: 
+                with open(filepath) as f:
+                    lines = [line.rstrip() for line in f]
+                f.close()
+                #return lines
+            except Exception as e:
+                logger.error("Exception while reading the file " + str(e))
+                sys.exit(1)   
+
         rlines = []
-        try: 
-           with open(filepath) as f:
-             lines = [line.rstrip() for line in f]
-           f.close()
-           #return lines
-        except Exception as e:
-            logger.error("Exception while reading the file " + str(e))
-            sys.exit(1)   
         if file_regular != 'unset':
             
             try: 
@@ -655,7 +664,7 @@ if __name__ == '__main__':
     parser.add_argument('-password', action='store', default='s3cret', type=str, help='Password for authenticated scan')
     parser.add_argument('-domain', action='store', default='SECRET.LOCAL', help='Domain for authenticated scan')
     parser.add_argument('-fake-hostname', action='store', default='localhost', help='Computer hostname SMB connection will be from')
-    parser.add_argument('-word-list-path', action="store", type=str, help="File containing the string to look for", required=True)
+    parser.add_argument('-word-list-path', action="store", default='unset', type=str, help="File containing the string to look for")
     parser.add_argument('-max-size', action="store", default=50000 ,type=int, help="Maximum size of the file to be considered for scanning (bytes)")
     parser.add_argument('-file-extensions-black', action='store', type=str, default='none', help='Comma separated file extensions to skip while secrets harvesting')
     parser.add_argument('-multithread', action='store_true', default=False, help="Assign a thread to any IP to scan")
