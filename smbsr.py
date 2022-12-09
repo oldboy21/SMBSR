@@ -33,8 +33,7 @@ import datetime
 from datetime import datetime
 import faulthandler
 import concurrent.futures
-import gc
-import time
+
 import io
 import string
 import textract
@@ -81,18 +80,13 @@ class Database:
                                 runTag text NOT NULL
 
                             ); """
-            smb_write_table = """ CREATE TABLE IF NOT EXISTS smbwriterights (
-                                shareIp text PRIMARY KEY,                                
-                                writable integer NOT NULL
 
-                            ); """                            
-                                
     
 
             if self.cursor is not None:
                 self.create_table(smb_match_table)
                 self.create_table(smb_files_table)
-                self.create_table(smb_write_table)
+                
         except Exception as e: 
           logger.error("Encountered error while creating the database: " + str(e))
           sys.exit(1)
@@ -101,7 +95,7 @@ class Database:
         cursor = self.cursor
         exportQuery = "SELECT * from smbsr WHERE runTag = '{tag}\'".format(tag=tag)
         exportQueryFile = "SELECT * from smbfile WHERE runTag = '{tag}\'".format(tag=tag)
-        exportWritableQuery = "SELECT * from smbwriterights"
+        
         sr = cursor.execute(exportQuery)
         with open('smbsr_results.csv', 'w') as f:
             writer = csv.writer(f)
@@ -109,11 +103,7 @@ class Database:
         sf = cursor.execute(exportQueryFile)
         with open('smbsrfile_results.csv', 'w') as g:
             writer = csv.writer(g)
-            writer.writerows(sf)    
-        sw = cursor.execute(exportWritableQuery)
-        with open('smbsrwritable_results.csv', 'w') as h:
-            writer = csv.writer(h)
-            writer.writerows(sw)    
+            writer.writerows(sf)     
 
 
 
@@ -133,8 +123,7 @@ class Database:
          try: 
            self.lock.acquire(True) 
            cursor = self.cursor
-           checkQuery = 'SELECT id, extract FROM smbsr WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\' AND matchedWith=\'{matchedwith}\' AND position=\'{line}\''.format(ip=ip, share=share, filename=filename, matchedwith=matchedwith, line=line)
-           results = cursor.execute(checkQuery).fetchall()
+           results = cursor.execute('SELECT id, extract FROM smbsr WHERE ip = ? AND share = ? AND file = ? AND matchedWith = ? AND position = ?', (ip, share, filename, matchedwith,line)).fetchall()
            
            if len(results) == 0:
                insertFindingQuery = "INSERT INTO smbsr (file, share, ip, position, matchedWith, tsCreated, tsModified, tsAccessed, tsFirstFound, tsLastFound, runTag, extract) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
@@ -142,16 +131,15 @@ class Database:
                self.commit()
            else: 
                 textOld = ((results[0])[1])
-                updateQuery = 'UPDATE smbsr SET tsLastFound = \'{date}\' WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\' AND matchedWith=\'{matchedwith}\' AND position=\'{line}\''.format(date=date, ip=ip, share=share, filename=filename, matchedwith=matchedwith, line=line)
-                cursor.execute(updateQuery)
+                updateQuery = 'UPDATE smbsr SET tsLastFound = ? WHERE ip = ? AND share = ? AND file= ? AND matchedWith = ? AND position = ? '
+                cursor.execute(updateQuery, (date, ip, share, filename, matchedwith, line))
                 self.commit() 
                 if textOld != text:
-                   updateQuery = 'UPDATE smbsr SET extract = \'{text}\' WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\' AND matchedWith=\'{matchedwith}\' AND position=\'{line}\''.format(text=text, ip=ip, share=share, filename=filename, matchedwith=matchedwith, line=line)
-                   aa = cursor.execute(updateQuery)
-                   print(aa)
+                   updateQuery = 'UPDATE smbsr SET extract = ? WHERE ip = ? AND share = ? AND file = ? AND matchedWith = ? AND position = ?'
+                   cursor.execute(updateQuery, (text, ip, share, filename, matchedwith, line))                   
                    self.commit()
-                   updateQuery = 'UPDATE smbsr SET runTag = \'{tag}\' WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\' AND matchedWith=\'{matchedwith}\' AND position=\'{line}\' AND extract=\'{text}\''.format(tag=tag, text=text, ip=ip, share=share, filename=filename, matchedwith=matchedwith, line=line)
-                   cursor.execute(updateQuery)
+                   updateQuery = 'UPDATE smbsr SET runTag = ? WHERE ip = ? AND share = ? AND file = ? AND matchedWith = ? AND position = ? AND extract = ?'
+                   cursor.execute(updateQuery, (tag, text, ip, share, filename, matchedwith, line))
                    self.commit()    
          except Exception as e:
             logger.error("Error while updating database: " + str(e))
@@ -165,8 +153,8 @@ class Database:
          try: 
            self.lock.acquire(True)   
            cursor = self.cursor
-           checkQuery = 'SELECT id FROM smbfile WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\''.format(ip=ip, share=share, filename=filename)
-           results = cursor.execute(checkQuery).fetchall()
+           checkQuery = 'SELECT id FROM smbfile WHERE ip = ? AND share = ? AND file = ?'
+           results = cursor.execute(checkQuery, (ip, share, filename)).fetchall()
            
            if len(results) == 0:           
                insertFindingQuery = "INSERT INTO smbfile (file, share, ip, tsCreated, tsModified, tsAccessed, tsFirstFound, tsLastFound, runTag) VALUES (?,?,?,?,?,?,?,?,?)"
@@ -174,25 +162,15 @@ class Database:
                self.commit()
            else: 
                
-               updateQuery = 'UPDATE smbfile SET tsLastFound = \'{date}\' WHERE ip=\'{ip}\' AND share=\'{share}\' AND file=\'{filename}\''.format(date=date, ip=ip, share=share, filename=filename)
-               cursor.execute(updateQuery)
+               updateQuery = 'UPDATE smbfile SET tsLastFound = ? WHERE ip= ? AND share = ? AND file = ?'
+               cursor.execute(updateQuery,(date, ip, share, filename))
                self.commit()     
          except Exception as e:
            logger.error("Error while updating database: " + str(e))
            self.lock.release()   
          finally: 
             self.lock.release()
-
-    def insertWritableCount(self, share, ip, writable):
-         
-         try: 
-           self.lock.acquire(True)         
-           cursor = self.cursor
-           insertWritableQuery = "INSERT INTO smbwriterights (shareIp, writable) VALUES (?,?) ON CONFLICT(shareIp) DO UPDATE SET writable=?"
-           cursor.execute(insertWritableQuery, (share+"/"+ip, writable, writable))
-           self.commit()  
-         finally: 
-            self.lock.release()                        
+                    
                 
 
 class HW(object):
@@ -260,7 +238,7 @@ class HW(object):
         try:
             if text == "" or text is None:
                 return False
-            logger.debug(f"[{self.workername}] Searching for secrets in text: "+text)
+            
             results = []
             output = False
             lbound = 0 
@@ -286,7 +264,8 @@ class HW(object):
                             else: 
                                 lbound = substartidx - 25
                             if (len(text) - (substartidx+len(words[z]))) < 25:
-                                ubound = (len(text) - (substartidx+len(words[z])))
+                                
+                                ubound = len(text)
                             else:
                                 ubound = (substartidx+len(words[z]) + 25)
                             
@@ -304,6 +283,7 @@ class HW(object):
                             matched = (matchedraw).group(0)
                             logger.info(f"[{self.workername}] Found interesting match in " + filename + " with regex " + i +", line: " + str(counter))
                             substartidx = (text.lower()).find(matched.lower())
+                            
                             if len(text) < 50: 
                                 tosave = text
                             else: 
@@ -312,7 +292,8 @@ class HW(object):
                                 else: 
                                     lbound = substartidx - 25
                                 if (len(text) - (substartidx+len(matched))) < 25:
-                                    ubound = (len(text) - (substartidx+len(matched)))
+                                    
+                                    ubound = len(text)
                                 else:
                                     ubound = (substartidx+len(matched) + 25)
                                 
@@ -416,11 +397,6 @@ class HW(object):
                                continue  
                      else:
                          logger.debug(f"[{self.workername}] File: "+ parentPath+p.filename )
-                         if  not p.isReadOnly:
-                            
-                            count+=1
-                            
-                            self.db.insertWritableCount(shared_folder,IP,count) 
                          self.parse(shared_folder, parentPath+p.filename, to_match, IP)
            
              return count               
@@ -709,7 +685,7 @@ if __name__ == '__main__':
 
     infoHandler = logging.FileHandler(options.logfile)
     if options.debug is True:
-        print ("Log Level: DEBUG")
+        
         debugHandler = logging.FileHandler(options.logfile)
         debugHandler.setLevel(logging.DEBUG)
         debugHandler.setFormatter(formatter)
