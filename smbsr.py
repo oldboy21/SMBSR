@@ -9,21 +9,13 @@ import socket
 import argparse
 import logging
 import sys
-import ipaddress 
-import urllib
 import tempfile
 import re
 from smb import *
 from smb.SMBConnection import SMBConnection
-from smb.SMBHandler import SMBHandler
-from io import BytesIO
 import masscan
-import _thread
 import threading
-from threading import Lock
-from threading import Thread
 import random
-import uuid
 import sys
 import os
 import sqlite3
@@ -32,8 +24,6 @@ from itertools import compress
 import datetime
 from datetime import datetime
 import faulthandler
-import concurrent.futures
-
 import io
 import string
 import textract
@@ -312,8 +302,6 @@ class HW(object):
         hits = 0 
         file_obj = tempfile.NamedTemporaryFile()
         file_ext = (filename.split('/')[-1]).split('.')[-1] or "empty"
-        #file_ext_double = (filename.split('/')[-1]).split('.')[-2] or "empty"
-        # or file_ext_double.lower() in self.options.file_extensions_black.split(',')
         if file_ext.lower() in self.options.file_extensions_black.split(','):
             logger.debug(f"[{self.workername}] This extensions is blacklisted")
         else:
