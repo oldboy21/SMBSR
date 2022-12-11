@@ -306,17 +306,17 @@ class HW(object):
             logger.debug(f"[{self.workername}] This extensions is blacklisted")
         else:
             if file_ext.lower() in self.options.file_interesting.split(','):
-               logger.debug(f"[{self.workername}] Found interesting file: " + filename)
+               logger.info(f"[{self.workername}] Found interesting file: " + filename)
                self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename), self.options.tag)
             if (filename.split('/')[-1]).split('.')[0].lower() in to_match["words"]:
-               logger.debug(f"[{self.workername}] Found interesting file named " + filename)
+               logger.info(f"[{self.workername}] Found interesting file named " + filename)
                self.db.insertFileFinding(filename, share, IP, self.retrieveTimes(share,filename), self.options.tag)      
             
             filesize = (self.conn.getAttributes(share, filename)).file_size        
             if filesize > self.options.max_size:
                 logger.debug(f"[{self.workername}] Skipping file " + filename + ", it is too big and you said i can't handle it")
 
-            else:
+            elif len(to_match["words"]) > 0 or len(to_match["regex"]) > 0:
                 file_attributes, filesize = self.conn.retrieveFile(share, filename, file_obj)
                 #here the extension check for office files 
                 if file_ext.lower() in ['docx','doc','docx','eml','epub','gif','jpg','mp3','msg','odt','ogg','pdf','png','pptx','ps','rtf','tiff','tif','wav','xlsx','xls']:

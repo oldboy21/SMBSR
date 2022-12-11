@@ -1,5 +1,5 @@
 __pycache__/*
- *.db*
+*.db*
 *.log
 targets.txt
 tomatch.txt
