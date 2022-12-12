@@ -366,7 +366,7 @@ class HW(object):
                          parentPath += '/'
                      if p.isDirectory:   
                          
-                         if p.filename.lower() in (self.options.folder_black.split(',')).lower():
+                         if p.filename.lower() in list(map(lambda x: x.lower(), self.options.folder_black.split(','))):
                            logger.debug(f"[{self.workername}] Skipping " + p.filename + " since blacklisted")   
 
                            continue
