@@ -377,7 +377,7 @@ class HW(object):
                                     break
                         except Exception as e:
                             logger.error(f"[{self.workername}] Encountered exception while reading file: " +
-                                         filename + " " + file_ext + " | Exception: " + str(e))
+                                         filename + " with extension " + file_ext + " on share: " + share + " IP: " + IP + " | Exception: " + str(e))
                             # using filetype different from none?
                             if isinstance(file_obj, (io.RawIOBase, io.BufferedIOBase)):
                                 self.options.file_extensions_black = self.options.file_extensions_black + "," + file_ext
