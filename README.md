@@ -1,3 +1,7 @@
+# STOP THERE! This tool is no longer mantained!
+
+Decided to merge the feature of SMBSR and RSMBI, please refer to [SMBAT](https://github.com/oldboy21/SMBAT)
+
 # SMBSR - what is that? 
 
 Well, SMBSR is a python script which given a CIDR/IP/IP_file/HOSTNAME(s) enumerates all the SMB services listening (445) among the targets 
